@@ -9,10 +9,10 @@ Open `index.html` in a modern browser. The core calculations and CSV/JSON handli
 - Add, edit, duplicate, archive and delete loans.
 - Optional per-loan prepayment limits by month and Indian financial year (April–March).
 - Monthly reducing-balance and simplified daily outstanding interest estimates.
-- EMI, amortization schedule, estimated closure dates and portfolio dashboard.
+- EMI, amortization schedule, estimated closure dates and portfolio dashboard with estimated prepayment interest/time savings by loan, with portfolio totals secondary.
 - One-time, monthly, quarterly, half-yearly and annual prepayments, multiple plans at once.
 - Annual bonus planner with reserve and allocation assumptions.
-- Advisor comparison for highest rate, effective-cost proxy, smallest balance and largest balance.
+- Advisor comparison for highest rate, effective-cost proxy, smallest balance and largest balance, showing selected-loan impact first and portfolio totals as context.
 - Baseline vs. strategy scenario comparison, monthly/quarterly/yearly report views.
 - CSV exports for loans, prepayments, bonus plans, transactions and schedules; JSON portfolio backup/restore.
 - CSV template download and input validation.

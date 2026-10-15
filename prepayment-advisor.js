@@ -19,7 +19,14 @@ function recommend(loans,prepayments,amount,date,goal='Balanced',options={}){
   const lumpPlans=alloc.map((a,i)=>({id:'advisor-'+s.name+i,loanId:a.loanId,name:'Advisor: '+s.name,amount:a.amount,startDate:date,endDate:date,frequency:'One-time',status:'Active'}));
   const recurringPlans=monthlyAllocations.map((a,i)=>({id:'advisor-monthly-'+s.name+i,loanId:a.loanId,name:'Advisor monthly: '+s.name,amount:a.amount,startDate:date,endDate:'',frequency:'Monthly',status:'Active'}));
   const sim=LoanCalc.portfolioSimulation(loans,prepayments.concat(lumpPlans,recurringPlans));
-  candidates.push({name:s.name,reason:s.reason,allocations:alloc,monthlyAllocations,interestSaved:Math.max(0,LoanCalc.round(baseline.totalInterest-sim.totalInterest)),netBenefit:Math.max(0,LoanCalc.round(baseline.totalInterest-sim.totalInterest-sim.totalFees+baseline.totalFees)),monthsSaved:Math.max(0,baseline.months-sim.months),debtFreeDate:sim.debtFreeDate,feeCost:LoanCalc.round(sim.totalFees-baseline.totalFees),sim});
+  const affectedLoanIds=[...new Set([...alloc,...monthlyAllocations].map(a=>a.loanId))];
+  const accountSavings=affectedLoanIds.map(loanId=>{
+   const baselineSchedule=baseline.schedules.find(schedule=>schedule.loanId===loanId),scenarioSchedule=sim.schedules.find(schedule=>schedule.loanId===loanId);
+   const interestSaved=Math.max(0,LoanCalc.round((baselineSchedule?.totalInterest||0)-(scenarioSchedule?.totalInterest||0)));
+   const feeCost=LoanCalc.round((scenarioSchedule?.totalFees||0)-(baselineSchedule?.totalFees||0));
+   return {loanId,name:(loans.find(loan=>loan.id===loanId)||{}).name||loanId,monthsSaved:Math.max(0,(baselineSchedule?.months||0)-(scenarioSchedule?.months||0)),interestSaved,feeCost,netBenefit:Math.max(0,LoanCalc.round(interestSaved-feeCost))};
+  });
+  candidates.push({name:s.name,reason:s.reason,allocations:alloc,monthlyAllocations,accountSavings,interestSaved:Math.max(0,LoanCalc.round(baseline.totalInterest-sim.totalInterest)),netBenefit:Math.max(0,LoanCalc.round(baseline.totalInterest-sim.totalInterest-sim.totalFees+baseline.totalFees)),monthsSaved:Math.max(0,baseline.months-sim.months),debtFreeDate:sim.debtFreeDate,feeCost:LoanCalc.round(sim.totalFees-baseline.totalFees),sim});
  }
  candidates.sort((a,b)=>goal==='Debt-free date'?b.monthsSaved-a.monthsSaved||b.interestSaved-a.interestSaved:b.netBenefit-a.netBenefit);
  return {baseline,candidates,eligible,goal,message:'Estimates assume the entered principal, rates, EMI and prepayment eligibility are accurate. Confirm lender payment allocation and charges.'};
