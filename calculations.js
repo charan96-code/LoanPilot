@@ -17,7 +17,7 @@ function simulateLoan(loan,opts={}){
    const date=d.toISOString().slice(0,10), opening=balance;
    let interest;
    if(method==='daily'){
-    const prev=addMonthsClamped(d,-1);
+    const prev=addMonthsClamped(start,month-1);
      const days=Math.max(1,Math.round((d-prev)/86400000));
      const basis=(isLeapYear(d.getFullYear())?366:365);
      interest=balance*(annual/100)*days/basis;
