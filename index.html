@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>LoanPilot — Debt Planner</title><link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="app-shell">
+<aside class="sidebar">
+  <div class="brand"><div class="brand-mark">₹</div><div><strong>LoanPilot</strong><small>DEBT PLANNER</small></div></div>
+  <div class="workspace-label">WORKSPACE</div>
+  <nav id="nav">
+    <button class="nav-item active" data-page="dashboard"><span>◫</span> Dashboard</button>
+    <button class="nav-item" data-page="loans"><span>▤</span> My loans</button>
+    <button class="nav-item" data-page="prepayments"><span>↗</span> Prepayments</button>
+    <button class="nav-item" data-page="bonus"><span>✦</span> Bonus planner</button>
+    <button class="nav-item" data-page="advisor"><span>◎</span> Prepayment advisor</button>
+    <button class="nav-item" data-page="scenarios"><span>⇄</span> Scenarios</button>
+    <button class="nav-item" data-page="schedule"><span>▦</span> Repayment schedules</button>
+    <button class="nav-item" data-page="reports"><span>▥</span> Reports</button>
+    <button class="nav-item" data-page="data"><span>⇧</span> Import & export</button>
+    <button class="nav-item" data-page="settings"><span>⚙</span> Settings</button>
+  </nav>
+  <div class="sidebar-bottom"><div class="privacy-dot"></div><div><strong>Private by design</strong><small>Calculations run in your browser</small></div></div>
+</aside>
+<main class="main">
+<header class="topbar"><div><div class="eyebrow" id="crumb">OVERVIEW</div><h1 id="pageTitle">Your debt, made clearer.</h1></div><div class="top-actions"><span id="saveStatus" class="save-status">● Unsaved changes</span><button class="btn hidden" id="resumeDraft">Resume loan draft</button><button class="btn btn-quiet" id="themeBtn">◐ Theme</button><button class="btn btn-primary" id="quickAdd">＋ Add loan</button></div></header>
+<div id="content" class="content"></div>
+<footer>LoanPilot is a planning estimate, not a lender quote. Verify interest conventions, charges and prepayment eligibility with your lender.</footer>
+</main>
+</div>
+<div class="modal-backdrop hidden" id="modalBackdrop"><section class="modal" role="dialog" aria-modal="true"><div class="modal-head"><div><div class="eyebrow">PORTFOLIO</div><h2 id="modalTitle">Add loan</h2></div><button class="icon-btn" id="modalClose" aria-label="Close">×</button></div><form id="loanForm"><div class="form-grid">
+<label>Loan name<input name="name" required placeholder="e.g. Home loan"></label>
+<label>Lender / bank<input name="lender" placeholder="e.g. HDFC Bank"></label>
+<label>Loan category<select name="category"><option>Home Loan</option><option>Personal Loan</option><option>Car Loan</option><option>Education Loan</option><option>Business Loan</option><option>Gold Loan</option><option>Loan Against Property</option><option>Other</option></select></label>
+<label>Status<select name="status"><option>Active</option><option>Archived</option><option>Closed</option></select></label>
+<label>Original amount (₹)<input name="originalAmount" type="number" min="0" step="0.01" required></label>
+<label>Outstanding principal (₹)<input name="principal" type="number" min="0" step="0.01" required></label>
+<label>Annual interest rate (%)<input name="rate" type="number" min="0" max="100" step="0.01" required></label>
+<label>Monthly EMI (₹)<input name="emi" type="number" min="0" step="0.01" required></label>
+<label>Remaining tenure (months)<input name="tenure" type="number" min="1" max="600" step="1" required></label>
+<label>EMI due date<input name="dueDate" type="date" required></label>
+<label>Interest method<select name="method"><option value="monthly">Monthly reducing balance</option><option value="daily">Daily outstanding (Actual/365)</option></select></label>
+<label>Prepayment charge (%)<input name="feeRate" type="number" min="0" max="100" step="0.01" value="0"></label>
+<label>Minimum prepayment (₹)<input name="minPrepay" type="number" min="0" step="1" value="0"></label>
+<label>Monthly prepayment cap (% of outstanding, optional)<input name="monthlyPrepayLimitPct" type="number" min="0" max="100" step="0.01" placeholder="e.g. 10"><small>Limit is based on opening principal for each EMI month.</small></label>
+<label>Financial-year cap (% of outstanding, optional)<input name="financialYearPrepayLimitPct" type="number" min="0" max="100" step="0.01" placeholder="e.g. 25"><small>Indian financial year (April–March); based on the first modeled balance in that FY. Leave blank for no cap.</small></label>
+<label class="check-label"><input name="eligible" type="checkbox" checked> Eligible for prepayment</label>
+<label class="wide">Notes<textarea name="notes" rows="2" placeholder="Optional lender-specific conditions"></textarea></label>
+</div><div class="modal-actions"><button type="button" class="btn btn-quiet" id="cancelLoan">Cancel</button><button type="submit" class="btn btn-primary">Save loan</button></div></form></section></div>
+<input type="file" id="fileInput" accept=".csv,.json" hidden>
+<script src="calculations.js"></script><script src="prepayment-advisor.js"></script><script src="csv-utils.js"></script><script src="reports.js"></script><script src="app.js"></script>
+</body></html>
