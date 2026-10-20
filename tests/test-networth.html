@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>LoanPilot net-worth tests</title>
+<style>body{font:14px system-ui;max-width:800px;margin:40px auto;padding:0 20px}li{margin:8px 0}.pass{color:green}.fail{color:#b22}</style>
+</head>
+<body>
+<h1>LoanPilot net-worth regression tests</h1>
+<p>Open this file in a browser. Results below are calculated locally.</p>
+<ol id="results"></ol>
+<script src="../calculations.js"></script>
+<script src="../networth.js"></script>
+<script src="../csv-utils.js"></script>
+<script>
+const tests=[];
+function test(name,fn){try{if(!fn())throw Error('assertion failed');tests.push([name,true])}catch(e){tests.push([name,false,e.message])}}
+test('Defaults provide editable assets, income sources and assumptions',()=>{const x=NetWorthCalc.createDefaults();return x.assets.some(a=>a.name==='EPF')&&x.assets.some(a=>a.name==='NPS')&&x.assets.some(a=>a.name==='Mutual funds')&&x.incomes.some(i=>i.name==='Salary')&&x.assumptions.savingsRate===20});
+test('Projection compounds assets, invests projected income and reduces loan liabilities',()=>{const profile={assets:[{id:'a',name:'Fund',value:100000,annualGrowth:10}],incomes:[{id:'i',name:'Salary',monthlyAmount:1000,annualGrowth:0}],assumptions:{savingsRate:20,contributionGrowth:0,projectionYears:2}},loan={id:'loan',status:'Active',principal:100000,rate:0,emi:5000,tenure:20,dueDate:'2026-01-01'},p=NetWorthCalc.project(profile,[loan],[],LoanCalc),year1=p.timeline[1],year2=p.timeline[2];return year1.assets===112400&&year1.liabilities===40000&&year1.netWorth===72400&&year2.assets===125800&&year2.liabilities===0&&year2.netWorth===125800});
+test('Archived loans are excluded from liabilities',()=>{const p=NetWorthCalc.project({assets:[],incomes:[],assumptions:{projectionYears:1}},[{id:'old',status:'Archived',principal:50000,rate:0,emi:1000,tenure:50}],[],LoanCalc);return p.timeline[0].liabilities===0&&p.timeline[1].liabilities===0});
+test('Projection assumptions are bounded when restoring data',()=>{const p=NetWorthCalc.normalize({assets:[],incomes:[],assumptions:{savingsRate:120,contributionGrowth:-5,projectionYears:99}});return p.assumptions.savingsRate===100&&p.assumptions.contributionGrowth===0&&p.assumptions.projectionYears===40});
+test('Net-worth assets and income export CSV headers round-trip',()=>{const assets=[{id:'a',name:'Index fund',value:125000,annualGrowth:10}],incomes=[{id:'i',name:'Salary',monthlyAmount:80000,annualGrowth:7}],a=CSVUtils.parseCSV(CSVUtils.toCSV(assets,CSVUtils.headers.assets))[0],i=CSVUtils.parseCSV(CSVUtils.toCSV(incomes,CSVUtils.headers.incomes))[0];return a.value==='125000'&&a.annualGrowth==='10'&&i.monthlyAmount==='80000'&&i.annualGrowth==='7'});
+test('Net-worth projection assumptions export as an importable CSV',()=>{const rows=[{key:'savingsRate',value:20},{key:'contributionGrowth',value:8},{key:'projectionYears',value:10}],restored=CSVUtils.parseCSV(CSVUtils.toCSV(rows,CSVUtils.headers.networthSettings));return restored.length===3&&restored[0].key==='savingsRate'&&restored[2].value==='10'});
+const ol=document.getElementById('results');tests.forEach(([n,ok,e])=>{const li=document.createElement('li');li.className=ok?'pass':'fail';li.textContent=(ok?'PASS — ':'FAIL — ')+n+(e?' ('+e+')':'');ol.appendChild(li)});document.title=`${tests.filter(t=>t[1]).length}/${tests.length} tests passed — LoanPilot net worth`;
+</script>
+</body>
+</html>

@@ -14,7 +14,8 @@ Open `index.html` in a modern browser. The core calculations and CSV/JSON handli
 - Annual bonus planner with reserve and allocation assumptions.
 - Advisor comparison for highest rate, effective-cost proxy, smallest balance and largest balance, showing selected-loan impact first and portfolio totals as context.
 - Baseline vs. strategy scenario comparison, monthly/quarterly/yearly report views.
-- CSV exports for loans, prepayments, bonus plans, transactions and schedules; JSON portfolio backup/restore.
+- Net-worth calculator with editable asset balances and growth assumptions (including EPF, NPS, mutual funds and PPF), multiple monthly income sources, an adjustable savings rate, and a year-by-year future projection. Active loan repayment schedules are included as liabilities.
+- CSV exports for loans, prepayments, bonus plans, transactions, net-worth assets, income sources and net-worth assumptions; JSON portfolio backup/restore.
 - CSV template download and input validation.
 - Light/dark theme.
 
@@ -30,15 +31,19 @@ Portfolio changes are auto-saved in the browser's local storage, and an unfinish
 
 CSV headers are defined in `csv-utils.js`. IDs are stable references: `prepayments.loanId`, `transactions.loanId`. CSV import previews/validates before replacing or merging. Download the provided templates to see the exact column names.
 
+Net-worth CSV exports are separate `assets`, `incomes` and `networth-settings` files; import each through **Import CSV file**. JSON backups include the complete net-worth profile. Projection estimates assume steady annual returns and income growth, add the chosen share of gross income to savings once per year, and use the existing loan repayment schedules to estimate future liabilities. Older portfolio backups load with the default net-worth categories and assumptions.
+
 ## Files
 - `index.html` — page shell and loan editor
 - `styles.css` — responsive interface and themes
 - `app.js` — application state, pages, interactions
 - `calculations.js` — EMI, amortization and portfolio simulation
+- `networth.js` — asset, income and loan-liability projections
 - `prepayment-advisor.js` — heuristic strategy comparisons
 - `csv-utils.js` — CSV parsing/export and JSON backup
 - `reports.js` — reporting helpers
 - `tests/test-calculations.html` — browser-run regression tests
+- `tests/test-networth.html` — browser-run net-worth and portability tests
 
 ## Test
-Open `tests/test-calculations.html` in a browser and inspect the results. Tests cover EMI, zero-rate loans, payoff, recurring prepayments, CSV quoting and negative balance protection.
+Open `tests/test-calculations.html` and `tests/test-networth.html` in a browser and inspect the results. Tests cover EMI, zero-rate loans, payoff, recurring prepayments, CSV quoting, net-worth projections, liabilities and net-worth CSV round-trips.
