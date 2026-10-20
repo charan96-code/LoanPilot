@@ -1,0 +1,245 @@
+﻿{
+  "schemaVersion": 4,
+  "portfolioName": "My Loan Portfolio",
+  "exportedAt": "2026-10-20T21:00:03.884Z",
+  "loans": [
+    {
+      "name": "Home Loan 540200012098",
+      "lender": "LIC HFL",
+      "category": "Home Loan",
+      "status": "Active",
+      "originalAmount": 1250000,
+      "principal": 477286.08,
+      "rate": 9.45,
+      "emi": 19196,
+      "tenure": 28,
+      "dueDate": "2026-11-10",
+      "method": "monthly",
+      "feeRate": 0,
+      "minPrepay": 10000,
+      "eligible": true,
+      "notes": "",
+      "id": "LN-p2k3tm-mv9lrgv4",
+      "createdAt": "2026-10-15T13:56:51.616Z",
+      "modifiedAt": "2026-10-15T14:44:03.436Z",
+      "monthlyPrepayLimitPct": 10,
+      "financialYearPrepayLimitPct": 25,
+      "reviewIntervalMonths": 1,
+      "reviewedAt": "2026-10-20"
+    },
+    {
+      "name": "Home Loan 540200012091",
+      "lender": "LIC HFL",
+      "category": "Home Loan",
+      "status": "Active",
+      "originalAmount": 1800000,
+      "principal": 997603.52,
+      "rate": 7.75,
+      "emi": 15285,
+      "tenure": 86,
+      "dueDate": "2026-11-10",
+      "method": "monthly",
+      "feeRate": 0,
+      "minPrepay": 10000,
+      "eligible": true,
+      "notes": "",
+      "id": "LN-zh00by-mv9lthx5",
+      "createdAt": "2026-10-15T13:58:26.297Z",
+      "modifiedAt": "2026-10-15T14:44:14.351Z",
+      "monthlyPrepayLimitPct": 10,
+      "financialYearPrepayLimitPct": 25,
+      "reviewedAt": "2026-10-20",
+      "reviewIntervalMonths": 12
+    }
+  ],
+  "prepayments": [
+    {
+      "id": "PP-rlmccr-mv9lvmo9",
+      "name": "Monthy Extra Prepayment",
+      "loanId": "LN-p2k3tm-mv9lrgv4",
+      "amount": 15000,
+      "frequency": "Monthly",
+      "startDate": "2026-12-01",
+      "endDate": "",
+      "status": "Active",
+      "notes": ""
+    },
+    {
+      "id": "PP-33ctjg-mv9xndvn",
+      "name": "Yearly Bonus",
+      "loanId": "LN-zh00by-mv9lthx5",
+      "amount": 100000,
+      "frequency": "Annual",
+      "startDate": "2027-04-30",
+      "endDate": "",
+      "status": "Active",
+      "notes": ""
+    }
+  ],
+  "bonuses": [],
+  "transactions": [],
+  "settings": {
+    "goal": "Balanced"
+  },
+  "networth": {
+    "assets": [
+      {
+        "id": "NW-A-EPF",
+        "name": "EPF",
+        "value": 700000,
+        "annualGrowth": 8.25,
+        "reviewedAt": "2026-10-20",
+        "reviewIntervalMonths": 12
+      },
+      {
+        "id": "NW-A-NPS",
+        "name": "NPS",
+        "value": 0,
+        "annualGrowth": 10,
+        "reviewedAt": "",
+        "reviewIntervalMonths": 12
+      },
+      {
+        "id": "NW-A-MF",
+        "name": "Mutual funds",
+        "value": 20000,
+        "annualGrowth": 5,
+        "reviewedAt": "2026-10-20",
+        "reviewIntervalMonths": 12
+      },
+      {
+        "id": "NW-A-PPF",
+        "name": "PPF",
+        "value": 0,
+        "annualGrowth": 7.1,
+        "reviewedAt": "",
+        "reviewIntervalMonths": 12
+      },
+      {
+        "id": "NW-A-CASH",
+        "name": "Savings & fixed deposits",
+        "value": 150000,
+        "annualGrowth": 3,
+        "reviewedAt": "2026-10-20",
+        "reviewIntervalMonths": 12
+      },
+      {
+        "id": "NW-A-EQUITY",
+        "name": "Stocks & equity",
+        "value": 75000,
+        "annualGrowth": 5,
+        "reviewedAt": "2026-10-20",
+        "reviewIntervalMonths": 12
+      },
+      {
+        "id": "NW-A-PROPERTY",
+        "name": "Property",
+        "value": 0,
+        "annualGrowth": 6,
+        "reviewedAt": "",
+        "reviewIntervalMonths": 12
+      },
+      {
+        "id": "NW-A-OTHER",
+        "name": "Gold & other assets",
+        "value": 0,
+        "annualGrowth": 6,
+        "reviewedAt": "",
+        "reviewIntervalMonths": 12
+      }
+    ],
+    "incomes": [
+      {
+        "id": "NW-I-SALARY",
+        "name": "Salary",
+        "monthlyAmount": 127000,
+        "annualGrowth": 7
+      },
+      {
+        "id": "NW-I-BUSINESS",
+        "name": "Business income",
+        "monthlyAmount": 0,
+        "annualGrowth": 8
+      },
+      {
+        "id": "NW-I-RENT",
+        "name": "Rental income",
+        "monthlyAmount": 0,
+        "annualGrowth": 5
+      },
+      {
+        "id": "NW-I-OTHER",
+        "name": "Other income",
+        "monthlyAmount": 0,
+        "annualGrowth": 5
+      }
+    ],
+    "assumptions": {
+      "savingsRate": 20,
+      "contributionGrowth": 5,
+      "projectionYears": 1,
+      "inflationRate": 6
+    }
+  },
+  "planning": {
+    "expenses": [
+      {
+        "id": "FP-E-HOME",
+        "name": "Housing",
+        "monthlyAmount": 22000,
+        "annualGrowth": 5
+      },
+      {
+        "id": "FP-E-FOOD",
+        "name": "Groceries & dining",
+        "monthlyAmount": 15000,
+        "annualGrowth": 5
+      },
+      {
+        "id": "FP-E-UTILITIES",
+        "name": "Utilities",
+        "monthlyAmount": 3000,
+        "annualGrowth": 5
+      },
+      {
+        "id": "FP-E-TRANSPORT",
+        "name": "Transport",
+        "monthlyAmount": 1500,
+        "annualGrowth": 5
+      },
+      {
+        "id": "FP-E-INSURANCE",
+        "name": "Insurance & healthcare",
+        "monthlyAmount": 0,
+        "annualGrowth": 5
+      },
+      {
+        "id": "FP-E-EDUCATION",
+        "name": "Education",
+        "monthlyAmount": 0,
+        "annualGrowth": 5
+      },
+      {
+        "id": "FP-E-OTHER",
+        "name": "Other recurring",
+        "monthlyAmount": 0,
+        "annualGrowth": 5
+      }
+    ],
+    "liabilities": [],
+    "goals": [
+      {
+        "id": "GOAL-a6mg0o-mvh5z6zc",
+        "name": "Emergency Fund",
+        "targetAmount": 200000,
+        "currentAmount": 50000,
+        "monthlyContribution": 10000,
+        "targetDate": "",
+        "createdAt": "2026-10-20"
+      }
+    ],
+    "assumptions": {
+      "inflationRate": 5.5
+    }
+  }
+}
