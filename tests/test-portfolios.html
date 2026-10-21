@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Portfolio and family tests</title>
+<style>body{font:14px system-ui;max-width:800px;margin:40px auto;padding:0 20px}li{margin:8px 0}.pass{color:green}.fail{color:#b22}</style>
+</head>
+<body>
+<h1>Portfolio and family regression tests</h1>
+<p>Open this file in a browser. All test calculations run locally.</p>
+<ol id="results"></ol>
+<script src="../networth.js"></script>
+<script src="../financial-planning.js"></script>
+<script src="../portfolio-family.js"></script>
+<script src="../csv-utils.js"></script>
+<script>
+const tests=[];
+function test(name,fn){try{if(!fn())throw Error('assertion failed');tests.push([name,true])}catch(e){tests.push([name,false,e.message])}}
+function defaults(){return {networth:NetWorthCalc.createDefaults(),planning:FinancialPlanning.createDefaults()}}
+const legacy={portfolioName:'Legacy plan',loans:[{id:'legacy-loan',principal:12000,status:'Active'}],transactions:[{id:'legacy-payment',loanId:'legacy-loan'}]};
+test('Legacy storage migrates without changing portfolio or financial record IDs',()=>{const w=PortfolioFamily.normalizeWorkspace(legacy,defaults()),p=w.portfolios[0];return w.portfolios.length===1&&p.id==='portfolio-default'&&p.name==='Legacy plan'&&p.data.loans[0].id==='legacy-loan'&&p.data.transactions[0].id==='legacy-payment'&&w.activePortfolioId===p.id});
+test('Legacy family members become portfolios without copying financial records',()=>{const w=PortfolioFamily.normalizeWorkspace({schemaVersion:5,portfolios:[{id:'p1',name:'Savings',owners:[{memberId:'m1',sharePct:100}],data:{networth:{assets:[{id:'a1',value:800}]}}}],family:{members:[{id:'m1',name:'Alex',role:'Parent'},{id:'m2',name:'Sam',role:'Child'}]}},defaults()),p=w.portfolios.find(x=>x.id==='p1'),sam=w.portfolios.find(x=>x.id==='m2');return p.name==='Alex'&&p.owners.length===0&&w.family.members.length===0&&w.portfolios.length===2&&sam.name==='Sam'&&sam.data.networth.assets.every(x=>x.value===0)&&PortfolioFamily.summarize(w).totals.assets===800});
+test('Multiple portfolios retain isolated balances and unique relationship context',()=>{const w=PortfolioFamily.normalizeWorkspace({portfolios:[{id:'a',name:'A',data:{loans:[{id:'same',principal:100,status:'Active'}],networth:{assets:[{id:'fund',value:500}]},planning:{liabilities:[{id:'debt',balance:25}]}}},{id:'b',name:'B',data:{loans:[{id:'same',principal:200,status:'Active'}],networth:{assets:[{id:'fund',value:1000}]}}}],activePortfolioId:'b'},defaults());const s=PortfolioFamily.summarize(w);return w.activePortfolioId==='b'&&s.totals.assets===1500&&s.totals.liabilities===325&&s.totals.netWorth===1175});
+test('Each portfolio is one family member and shared records are household totals',()=>{const w=PortfolioFamily.normalizeWorkspace({schemaVersion:6,portfolios:[{id:'p1',name:'One',owners:[{memberId:'legacy',sharePct:100}],data:{networth:{assets:[{id:'a',value:1000}]},loans:[{id:'l',principal:300,status:'Active'}]}},{id:'p2',name:'Two',data:{networth:{assets:[{id:'b',value:2000}]}}}],family:{members:[{id:'legacy',name:'Old separate profile'}],assets:[{id:'shared',name:'Shared',value:500,owners:[{memberId:'legacy',sharePct:100}]},{id:'shared',name:'Duplicate row',value:700,owners:[]}],liabilities:[{id:'joint-debt',balance:200,owners:[{memberId:'legacy',sharePct:100}]}]}},defaults());const s=PortfolioFamily.summarize(w),one=s.members.find(x=>x.id==='p1'),two=s.members.find(x=>x.id==='p2');return s.members.length===2&&one.name==='One'&&one.assets===1000&&one.liabilities===300&&one.netWorth===700&&two.name==='Two'&&two.assets===2000&&two.netWorth===2000&&s.totals.assets===3500&&s.totals.liabilities===500&&s.totals.netWorth===3000&&s.shared.assets===500&&s.shared.liabilities===200});
+test('Legacy ownership metadata validation does not invent investment cost basis',()=>{const members=[{id:'m1'},{id:'m2'}],errors=PortfolioFamily.validateOwnership([{memberId:'m1',sharePct:70},{memberId:'m2',sharePct:40}],members),unknown=PortfolioFamily.validateOwnership([{memberId:'missing',sharePct:100}],members),summary=PortfolioFamily.portfolioSummary({data:{networth:{assets:[{value:100}]},loans:[],planning:{liabilities:[]}}});return errors.length>0&&unknown.length>0&&summary.investedAmount===null});
+test('Shared records linked to portfolio records are not counted a second time',()=>{const w=PortfolioFamily.normalizeWorkspace({portfolios:[{id:'p1',name:'One',data:{networth:{assets:[{id:'asset-1',value:500}]},loans:[{id:'loan-1',principal:200,status:'Active'}]}}],family:{assets:[{id:'shared-a',name:'Same asset',value:500,sourcePortfolioId:'p1',sourceAssetId:'asset-1'}],liabilities:[{id:'shared-d',name:'Same debt',balance:200,sourcePortfolioId:'p1',sourceRecordId:'loan-1'}]}},defaults());const s=PortfolioFamily.summarize(w);return s.totals.assets===500&&s.totals.liabilities===200&&PortfolioFamily.validateWorkspace(w).length===0});
+test('Family history stores only saved values and replaces same-day snapshots',()=>{const family={history:[]},s={totals:{assets:10,liabilities:2,netWorth:8}},date=new Date('2026-02-01T12:00:00Z');PortfolioFamily.addSnapshot(family,s,date);PortfolioFamily.addSnapshot(family,{totals:{assets:11,liabilities:2,netWorth:9}},date);return family.history.length===1&&family.history[0].assets===11&&family.history[0].netWorth===9});
+test('Family CSV summary maps one portfolio to one member',()=>{const w=PortfolioFamily.normalizeWorkspace({schemaVersion:6,portfolios:[{id:'member-1',name:'Alex',owners:[{memberId:'legacy',sharePct:50}],data:{networth:{assets:[{value:100}]}}}],family:{members:[{id:'legacy',name:'Old profile'}]}},defaults()),rows=PortfolioFamily.exportRows(w);return rows.familyMembers.length===1&&rows.familyMembers[0].id==='member-1'&&rows.familyMembers[0].name==='Alex'&&rows.familyMembers[0].assets===100&&rows.portfolios[0].owners==='[]'});
+test('Legacy family CSV formats remain identifiable for compatibility',()=>CSVUtils.identifyDataType('family-members.csv',CSVUtils.headers.familyMembers)==='familyMembers'&&CSVUtils.identifyDataType('portfolio-ownership.csv',CSVUtils.headers.portfolioOwnership)==='portfolioOwnership'&&CSVUtils.parseCSV(CSVUtils.toCSV([{portfolioId:'p1',memberId:'m1',sharePct:50}],CSVUtils.headers.portfolioOwnership))[0].sharePct==='50');
+document.querySelector('#results').innerHTML=tests.map(([name,ok,error])=>`<li class="${ok?'pass':'fail'}">${ok?'PASS':'FAIL'} — ${name}${error?`: ${error}`:''}</li>`).join('');
+</script>
+</body>
+</html>

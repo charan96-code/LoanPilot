@@ -7,12 +7,13 @@
 <body>
 <div class="app-shell">
 <aside class="sidebar">
-  <div class="brand"><div class="brand-mark">₹</div><div><strong>Wealth Manager</strong><small>PERSONAL FINANCE</small></div></div>
+  <div class="brand"><div class="brand-mark">₹</div><div class="brand-copy"><strong>Wealth Manager</strong><small>PERSONAL FINANCE</small></div><button class="menu-toggle" id="menuToggle" type="button" aria-label="Collapse navigation" aria-expanded="true">☰</button></div>
   <div class="workspace-label">WORKSPACE</div>
   <nav id="nav">
     <div class="nav-group"><div class="nav-group-label">OVERVIEW</div>
       <button class="nav-item active" data-page="dashboard"><span>◫</span> Financial overview</button>
       <button class="nav-item" data-page="loanDashboard"><span>▥</span> Loan dashboard</button>
+      <button class="nav-item" data-page="family"><span>⌂</span> Family dashboard</button>
     </div>
     <div class="nav-group"><div class="nav-group-label">PLAN & BUILD</div>
       <button class="nav-item" data-page="cashflow"><span>↔</span> Cash flow</button>
@@ -42,7 +43,7 @@
   <div class="sidebar-bottom"><div class="privacy-dot"></div><div><strong>Private by design</strong><small>Calculations run in your browser</small></div></div>
 </aside>
 <main class="main">
-<header class="topbar"><div><div class="eyebrow" id="crumb">OVERVIEW</div><h1 id="pageTitle">Your debt, made clearer.</h1></div><div class="top-actions"><span id="saveStatus" class="save-status">● Unsaved changes</span><button class="btn hidden" id="resumeDraft">Resume loan draft</button><button class="btn btn-quiet" id="themeBtn">◐ Theme</button><button class="btn btn-primary" id="quickAdd">＋ Add loan</button></div></header>
+<header class="topbar"><div><div class="eyebrow" id="crumb">OVERVIEW</div><h1 id="pageTitle">Your debt, made clearer.</h1></div><div class="top-actions"><label class="portfolio-switcher">Member<select id="portfolioSwitcher" aria-label="Switch family member"></select></label><span id="saveStatus" class="save-status">● Unsaved changes</span><button class="btn hidden" id="resumeDraft">Resume loan draft</button><button class="btn btn-quiet" id="themeBtn">◐ Theme</button></div></header>
 <div id="content" class="content"></div>
 <footer>Wealth Manager provides planning estimates, not financial advice or lender quotes. Verify assumptions, interest conventions, charges, and eligibility with your providers.</footer>
 </main>
@@ -67,5 +68,5 @@
 <label class="wide">Notes<textarea name="notes" rows="2" placeholder="Optional lender-specific conditions"></textarea></label>
 </div><div class="modal-actions"><button type="button" class="btn btn-quiet" id="cancelLoan">Cancel</button><button type="submit" class="btn btn-primary">Save loan</button></div></form></section></div>
 <input type="file" id="fileInput" accept=".csv,.json" hidden>
-<script src="calculations.js"></script><script src="prepayment-advisor.js"></script><script src="networth.js"></script><script src="financial-planning.js"></script><script src="csv-utils.js"></script><script src="reports.js"></script><script src="app.js"></script>
+<script src="calculations.js"></script><script src="prepayment-advisor.js"></script><script src="networth.js"></script><script src="financial-planning.js"></script><script src="portfolio-family.js"></script><script src="csv-utils.js"></script><script src="reports.js"></script><script src="app.js"></script>
 </body></html>

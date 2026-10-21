@@ -15,6 +15,8 @@ Open `index.html` in a modern browser. The core calculations and CSV/JSON handli
 - Advisor comparison for highest rate, effective-cost proxy, smallest balance and largest balance, showing selected-loan impact first and portfolio totals as context.
 - Baseline vs. strategy scenario comparison, monthly/quarterly/yearly report views.
 - A cross-feature financial overview plus a dedicated loan dashboard; navigation is grouped by planning workflow.
+- Multiple isolated portfolios with a persistent header switcher, portfolio creation/rename/archive, and a default portfolio.
+- A simple local family dashboard where each member is one separate portfolio, plus optional shared household assets and liabilities.
 - Net-worth calculator with editable asset balances and growth assumptions (including EPF, NPS, mutual funds and PPF), multiple monthly income sources, an adjustable savings rate, and a year-by-year future projection. Active loan repayment schedules are included as liabilities.
 - Monthly cash-flow tracking for recurring expenses, loan EMIs, other debt payments, goal contributions, the net-worth savings target, currently active recurring prepayment plans and estimated surplus. Future-starting recurring payments appear separately until their start date.
 - Emergency-fund tracker that sizes a configurable 1–24 month target from expenses marked essential and only includes assets explicitly eligible as accessible reserves.
@@ -26,11 +28,11 @@ Open `index.html` in a modern browser. The core calculations and CSV/JSON handli
 - Nominal and inflation-adjusted net-worth projections, with an editable inflation assumption.
 - What-if comparisons for savings rate, investment returns, income growth and extra monthly loan payments without changing the saved plan.
 - Account-review reminders for balances with editable review dates and review intervals.
-- CSV exports for loans, prepayments, bonus plans, transactions, net-worth assets, income sources and net-worth assumptions; JSON portfolio backup/restore.
-- CSV template download and input validation.
+- CSV exports for loans, prepayments, bonus plans, transactions, net-worth assets, income sources and net-worth assumptions; workspace JSON backups preserve member portfolios and household shared records.
+- Guided CSV/JSON selection, destination and replace/merge confirmation, schema validation, duplicate summaries, mapped multi-portfolio loan imports, family CSV imports, downloadable templates, a bounded local import history, and downloadable CSV validation reports.
 - Light/dark theme.
 
-The local-storage key remains compatible with existing LoanPilot and FinPath installations so the name change keeps existing portfolios.
+The local-storage key remains compatible with existing LoanPilot and FinPath installations. Existing single-portfolio data is migrated in place to the multi-portfolio workspace without changing financial record IDs. Older separate family-member profiles are folded into matching portfolios where possible; unmatched profiles become empty member portfolios without copying or changing financial records. A first run starts with an empty portfolio; demo data is available only through the explicit reset-to-sample action.
 
 ## Calculation assumptions and limitations
 This is a planning model, not a bank statement or legal interpretation of lender rules. Monthly interest is outstanding principal × annual rate / 12. Daily mode estimates monthly accrual using the calendar days in each period and Actual/365 or Actual/366. Payments are represented on the configured EMI date each month; a planned prepayment is applied after the first scheduled EMI on or after its effective date. The model does not yet simulate arbitrary intra-month rate-change events, moratoriums or lender-specific day-count conventions. EMI and payment-order practices differ by lender. The entered EMI is treated as the scheduled amount; final payments are capped to the amount owed.
@@ -40,11 +42,13 @@ The advisor evaluates a handful of transparent allocation heuristics using the s
 Prepayment schedules are generated from start date and frequency and capped by the model horizon. Payments under a loan’s configured minimum prepayment are skipped unless same-installment planned payments together meet that minimum. Planned payments change projections, not the current recorded principal; update the loan balance after an actual payment. The application does not yet reconcile actual transactions into opening balances or implement all advanced lender-specific constraints described in the specification. Transactions are stored/exported separately from projections.
 
 ## Data portability
-Portfolio changes are auto-saved in the browser's local storage, and an unfinished loan form is restored after a refresh. This is local to the same browser and device; clearing browser data may erase it. Use **Import & export** to download a separate JSON or CSV backup periodically. Browsers cannot silently overwrite a CSV file on your device, so CSV downloads remain an explicit action. JSON backup is the most complete single-file restore format. CSV files contain sensitive financial data; store them securely.
+Portfolio changes are auto-saved in the browser's local storage, and an unfinished loan form is restored after a refresh only within the portfolio where it was drafted. This is local to the same browser and device; clearing browser data may erase it. Use **Import & export** to download a separate JSON or CSV backup periodically. A current-portfolio JSON backup, selected-portfolio backup, or full-family JSON backup retains stable IDs and relationship mappings. CSV files contain sensitive financial data; store them securely.
 
-CSV headers are defined in `csv-utils.js`. IDs are stable references: `prepayments.loanId`, `transactions.loanId`. CSV import previews/validates before replacing or merging. Download the provided templates to see the exact column names.
+CSV headers are defined in `csv-utils.js`. IDs are stable references: `prepayments.loanId`, `transactions.loanId`, and member/portfolio `id`. A family member is the same record as a portfolio; there is no separate member profile or ownership-mapping step. CSV import validates before replacing or merging, rejects unsupported columns, summarizes matching IDs, and writes only after confirmation. A loans CSV with a `portfolioId` column can be imported using **Map loans by member**. Older JSON backups and family-member CSVs are migrated to the one-member-per-portfolio model; ownership-allocation CSVs are no longer used. Download the templates for exact headers.
 
-CSV exports are separate files for loans, prepayments, bonus plans, transactions, expenses, liabilities, goals, assets, incomes, net-worth assumptions, and planning assumptions; import each through **Import CSV file**. Asset CSVs carry emergency-fund eligibility, expense CSVs carry essential-expense flags, and planning settings carry the emergency-fund target. Related CSV imports validate loan IDs before applying. Replacing loans preserves linked plans/history only for loan IDs present in the imported file and leaves unrelated planning data unchanged. JSON backups include all planning data. Projection estimates assume steady annual returns and income growth, use the larger of the configured savings-rate estimate or goal contributions (so contributions are not double-counted), include future bonus estimates net of reserves, and use existing loan repayment schedules to estimate future liabilities. Goal balances are tracking amounts and should be included in listed assets only once. Older LoanPilot and FinPath backups remain compatible and load with defaults for any newer planning sections.
+CSV exports are separate files for loans, prepayments, bonus plans, transactions, expenses, liabilities, goals, assets, incomes, net-worth assumptions, and planning assumptions; import each through **Import & export**. XLSX and PDF are not supported by this offline app. The family CSV export is a summary; JSON is the detailed, re-importable family backup. Family net worth counts each portfolio once and counts shared records once by stable ID; owner shares only allocate member-level values. Household history contains only dated values saved in this browser and does not invent earlier valuations.
+
+Family features are a convenience for one local browser profile, not a secure multi-user/family-sharing system: there are no accounts, authentication, or per-member permissions. Anyone able to use the browser profile can view its stored data. Each member is represented by one portfolio, and household shared assets/liabilities are kept separate from member portfolios. Imported and manually entered balances are not live valuations. Invested cost basis, investment performance, currency conversion, and consolidated family cash flow are not separately modeled. Replacing loans preserves linked plans/history only for loan IDs present in the imported file and leaves unrelated planning data unchanged. Older LoanPilot and FinPath backups remain compatible and load with defaults for newer planning sections.
 
 ## Files
 - `index.html` — page shell and loan editor
@@ -52,11 +56,13 @@ CSV exports are separate files for loans, prepayments, bonus plans, transactions
 - `app.js` — application state, pages, interactions
 - `calculations.js` — EMI, amortization and portfolio simulation
 - `networth.js` — asset, income and loan-liability projections
+- `portfolio-family.js` — legacy migration, portfolio workspace and family calculations
 - `prepayment-advisor.js` — heuristic strategy comparisons
 - `csv-utils.js` — CSV parsing/export and JSON backup
 - `reports.js` — reporting helpers
 - `tests/test-calculations.html` — browser-run regression tests
 - `tests/test-networth.html` — browser-run net-worth and portability tests
+- `tests/test-portfolios.html` — portfolio migration, one-member-per-portfolio and household aggregation tests
 
 ## Test
-Open `tests/test-calculations.html` and `tests/test-networth.html` in a browser and inspect the results. Tests cover EMI, payoff, recurring prepayments, CSV quoting, net-worth and inflation projections, cash flow, goals, account reviews, additional liabilities and CSV portability.
+Open `tests/test-calculations.html`, `tests/test-networth.html`, and `tests/test-portfolios.html` in a browser and inspect the results. Tests cover EMI, payoff, recurring prepayments, CSV quoting, net-worth and inflation projections, cash flow, goals, account reviews, additional liabilities, portability, legacy migration, member portfolios, and consolidated calculations.

@@ -6,9 +6,21 @@ const uid=prefix=>prefix+'-'+Math.random().toString(36).slice(2,8)+'-'+Date.now(
 const today=()=>new Date().toISOString().slice(0,10);
 const STORAGE_KEY='loanpilot.portfolio.v1',DRAFT_KEY='loanpilot.loanDraft.v1';
 let state={portfolioName:'My Financial Plan',loans:[],prepayments:[],bonuses:[],transactions:[],settings:{goal:'Balanced'},networth:NetWorthCalc.createDefaults(),planning:FinancialPlanning.createDefaults(),lastExport:null,dirty:true};
-let page='dashboard',editingId=null,activeSchedule=null,scenarioResult=null,importMode='replace';
-function saveToStorage(){try{localStorage.setItem(STORAGE_KEY,JSON.stringify({portfolioName:state.portfolioName,loans:state.loans,prepayments:state.prepayments,bonuses:state.bonuses,transactions:state.transactions,settings:state.settings,networth:state.networth,planning:state.planning}));return true}catch(e){return false}}
-function loadFromStorage(){try{const saved=JSON.parse(localStorage.getItem(STORAGE_KEY)||'null');if(!saved||!Array.isArray(saved.loans))return false;state={...state,...saved,prepayments:saved.prepayments||[],bonuses:saved.bonuses||[],transactions:saved.transactions||[],settings:saved.settings||{goal:'Balanced'},networth:NetWorthCalc.normalize(saved.networth),planning:FinancialPlanning.normalize(saved.planning),dirty:false};return true}catch(e){return false}}
+let workspace=PortfolioFamily.normalizeWorkspace(null,{networth:NetWorthCalc.createDefaults(),planning:FinancialPlanning.createDefaults()});
+let page='dashboard',editingId=null,activeSchedule=null,scenarioResult=null,importMode='replace',pendingImportPortfolioId=null;
+const activePortfolio=()=>workspace.portfolios.find(x=>x.id===workspace.activePortfolioId);
+function currentPortfolioData(){return {portfolioName:state.portfolioName,loans:state.loans,prepayments:state.prepayments,bonuses:state.bonuses,transactions:state.transactions,settings:state.settings,networth:state.networth,planning:state.planning}}
+function loadPortfolioData(portfolio){state={...state,...portfolio.data,portfolioName:portfolio.name,prepayments:portfolio.data.prepayments||[],bonuses:portfolio.data.bonuses||[],transactions:portfolio.data.transactions||[],settings:portfolio.data.settings||{goal:'Balanced'},networth:NetWorthCalc.normalize(portfolio.data.networth),planning:FinancialPlanning.normalize(portfolio.data.planning),dirty:false}}
+function capturePortfolio(){const portfolio=activePortfolio();if(portfolio){portfolio.name=state.portfolioName;portfolio.data=currentPortfolioData()}}
+function saveToStorage(){try{capturePortfolio();PortfolioFamily.addSnapshot(workspace.family,PortfolioFamily.summarize(workspace));localStorage.setItem(STORAGE_KEY,JSON.stringify(workspace));return true}catch(e){return false}}
+function loadFromStorage(){try{const saved=JSON.parse(localStorage.getItem(STORAGE_KEY)||'null');if(!saved)return false;workspace=PortfolioFamily.normalizeWorkspace(saved,{networth:NetWorthCalc.createDefaults(),planning:FinancialPlanning.createDefaults()});loadPortfolioData(activePortfolio());return true}catch(e){return false}}
+function resetPortfolioContext(){activeSchedule=null;scenarioResult=null;advisorPreset=null;whatIf={savingsRate:null,returnDelta:0,incomeGrowthDelta:0,monthlyLoanExtra:0,loanId:''};state._acceptedScenario=null}
+function switchPortfolio(id){if(!$('#modalBackdrop').classList.contains('hidden')||!workspace.portfolios.some(x=>x.id===id))return;saveToStorage();workspace.activePortfolioId=id;resetPortfolioContext();loadPortfolioData(activePortfolio());saveToStorage();render()}
+function createPortfolio(name){const portfolio=PortfolioFamily.emptyPortfolio(name,{networth:NetWorthCalc.createDefaults(),planning:FinancialPlanning.createDefaults()});workspace.portfolios.push(portfolio);workspace.activePortfolioId=portfolio.id;resetPortfolioContext();loadPortfolioData(portfolio);saveToStorage();render()}
+function draftStorageKey(){return `${DRAFT_KEY}.${workspace.activePortfolioId}`}
+function readLoanDraft(){try{return JSON.parse(localStorage.getItem(draftStorageKey())||'null')}catch(e){return null}}
+function updateResumeDraft(){const draft=readLoanDraft();$('#resumeDraft').classList.toggle('hidden',!draft?.values)}
+function migrateLoanDraft(){try{const legacy=JSON.parse(localStorage.getItem(DRAFT_KEY)||'null');if(legacy?.values){const key=draftStorageKey();if(!localStorage.getItem(key))localStorage.setItem(key,JSON.stringify({...legacy,portfolioId:workspace.activePortfolioId}));localStorage.removeItem(DRAFT_KEY)}}catch(e){console.error('Could not migrate the saved loan draft.',e)}}
 const sample=()=>{
  state.loans=[
  {id:'LN-HOME-01',name:'Home loan',lender:'Example Bank',category:'Home Loan',status:'Active',originalAmount:6500000,principal:4820000,rate:8.5,emi:52000,tenure:168,dueDate:today(),method:'monthly',feeRate:0,minPrepay:10000,eligible:true,notes:'Sample data — replace with lender statement.'},
@@ -58,7 +70,7 @@ function dashboard(){
  <section class="panel emergency-summary"><div><strong>Emergency fund</strong><span>${emergency.monthsCovered===null?'Mark essential costs and liquid assets':`${emergency.monthsCovered.toFixed(1)} of ${emergency.targetMonths} target months · ${fmt(emergency.liquidAssets)} accessible`}</span></div>${emergency.target?`<div class="progress"><span style="width:${emergency.progress}%"></span></div>`:''}<button class="link-btn" data-page="emergencyFund">Open tracker →</button><button class="link-btn" data-page="calendar">Cash-flow calendar →</button></section>
  <div class="overview-shortcuts"><button class="btn" data-page="whatif">Explore a what-if scenario →</button><button class="btn" data-page="advisor">Compare debt strategies →</button><button class="btn" data-page="data">Back up your plan →</button></div>`;
 }
-function loansPage(){return `${heading('My loans','Manage balances, rates, EMI and lender assumptions.',`<button class="btn btn-primary" data-action="add-loan">＋ Add loan</button><button class="btn" data-action="export-loans">Export CSV</button>`)}<section class="panel">${loanTable(state.loans)}</section><div class="warning">The Outstanding column is the current balance you entered. Planned prepayments affect projected schedules only; they do not change the recorded current balance. Update the outstanding principal after you actually pay the lender. Archive a loan to exclude it from projections without deleting its record.</div>`}
+function loansPage(){return `${heading('My loans','Manage balances, rates, EMI and lender assumptions.',`<button class="btn btn-primary" data-action="add-loan">＋ Add loan</button><button class="btn" data-action="export-loans">Export CSV</button><button class="btn" data-action="portfolio-import">Import data</button>`)}<section class="panel">${loanTable(state.loans)}</section><div class="warning">The Outstanding column is the current balance you entered. Planned prepayments affect projected schedules only; they do not change the recorded current balance. Update the outstanding principal after you actually pay the lender. Archive a loan to exclude it from projections without deleting its record.</div>`}
 function prepaymentsPage(){return `${heading('Prepayment plans','Run multiple recurring and one-time payments across different loans.',`<button class="btn btn-primary" data-action="add-prepay">＋ Add prepayment</button><button class="btn" data-action="export-prepayments">Export CSV</button>`)}<section class="panel"><div class="table-wrap"><table><thead><tr><th>Plan</th><th>Loan</th><th>Amount</th><th>Frequency</th><th>Start date</th><th>End date</th><th>Status</th><th>Actions</th></tr></thead><tbody>${state.prepayments.map(p=>`<tr><td class="loan-name-cell">${escapeHTML(p.name)}</td><td>${escapeHTML((state.loans.find(l=>l.id===p.loanId)||{}).name||'Missing loan')}</td><td>${fmt(p.amount)}</td><td>${escapeHTML(p.frequency)}</td><td>${dateFmt(p.startDate)}</td><td>${dateFmt(p.endDate)}</td><td><span class="badge">${escapeHTML(p.status)}</span></td><td><div class="action-cell"><button class="small-btn" data-action="toggle-prepay" data-id="${p.id}">${p.status==='Paused'?'Resume':'Pause'}</button><button class="small-btn" data-action="edit-prepay" data-id="${p.id}">Edit</button><button class="small-btn" data-action="delete-prepay" data-id="${p.id}">Delete</button></div></td></tr>`).join('')||'<tr><td colspan="8" class="muted">No prepayment plans yet.</td></tr>'}</tbody></table></div></section><div class="success">Plans reduce projected balances only; the current outstanding balance changes only when you update it after an actual lender payment. Planned payments are applied after the first scheduled EMI on or after each effective date. ${state.prepayments.some(p=>{const l=state.loans.find(x=>x.id===p.loanId);return l&&+p.amount<+l.minPrepay})?'Some individual plans are below the loan minimum; they apply only if payments landing on the same installment together meet that minimum.':''}</div>`}
 function bonusPage(){return `${heading('Annual bonus & windfall planner','Plan expected bonuses while keeping reserves separate from repayment money.',`<button class="btn btn-primary" data-action="add-bonus">＋ Add bonus</button><button class="btn" data-action="export-bonuses">Export CSV</button>`)}<section class="panel"><div class="table-wrap"><table><thead><tr><th>Bonus plan</th><th>Expected date</th><th>Expected amount</th><th>Reserve</th><th>Emergency reserve</th><th>Available</th><th>Status</th><th>Actions</th></tr></thead><tbody>${state.bonuses.map(b=>`<tr><td class="loan-name-cell">${escapeHTML(b.name)}<small>${escapeHTML(b.frequency||'One-time')}</small></td><td>${dateFmt(b.date)}</td><td>${fmt(b.amount)}</td><td>${b.reservePercent||0}%</td><td>${fmt(b.emergencyReserve)}</td><td><strong>${fmt(Math.max(0,b.amount*(1-(b.reservePercent||0)/100)-(b.emergencyReserve||0)))}</strong></td><td><span class="badge">${escapeHTML(b.status||'Estimated')}</span></td><td><div class="action-cell"><button class="small-btn" data-action="bonus-advisor" data-id="${escapeHTML(b.id)}">Compare for loans</button><button class="small-btn" data-action="edit-bonus" data-id="${escapeHTML(b.id)}">Edit</button><button class="small-btn" data-action="delete-bonus" data-id="${escapeHTML(b.id)}">Delete</button></div></td></tr>`).join('')||'<tr><td colspan="8" class="muted">No bonus plans configured.</td></tr>'}</tbody></table></div></section><div class="warning">Future bonuses are estimates, not guaranteed income. Amounts available after reserves are included in net-worth projections. Use “Compare for loans” to send the reserve-adjusted amount and date to the prepayment advisor; the comparison will not change your saved loan plans.</div>`}
 let advisorPreset=null;
@@ -79,7 +91,7 @@ function networthProjectionMarkup(){
 }
 function networthPage(){
  const n=NetWorthCalc.normalize(state.networth),a=n.assumptions;
- return `${heading('Net worth calculator','Bring your investments, income and current loans into one long-term plan.')}
+ return `${heading('Net worth calculator','Bring your investments, income and current loans into one long-term plan.',`<button class="btn" data-action="portfolio-import">Import data</button><button class="btn" data-action="portfolio-export">Export portfolio</button>`)}
  <div class="networth-intro"><div><strong>See the whole financial picture</strong><p>Enter current balances and gross monthly income. Active loans and other debts reduce projected net worth; goal contributions and net bonus amounts are included in projected savings. Existing goal balances are for progress tracking, so include them in assets only once.</p></div><span class="pill">SAVED LOCALLY</span></div>
  <section class="panel projection-control"><div><h3>Choose your projection horizon</h3><p>Drag to see how the estimate changes over time.</p></div><label class="projection-slider"><span id="projectionYearsLabel">${a.projectionYears} years</span><input id="projectionYears" type="range" min="1" max="40" step="1" value="${a.projectionYears}" aria-label="Projection horizon in years"><span class="slider-range"><span>1 year</span><span>40 years</span></span></label></section>
  <div id="networthProjection">${networthProjectionMarkup()}</div>
@@ -151,19 +163,54 @@ function reviewsPage(){
  ],rows=items.map(x=>({...x,review:FinancialPlanning.reviewStatus(x.item,now)})),due=rows.filter(x=>x.review.due);
  return `${heading('Account reviews','Review account balances regularly so your dashboard stays useful.')}<div class="stats-grid">${stat('Accounts tracked',rows.length,'Assets, loans and other debts','▤')}${stat('Needs review',due.length,due.length?'Some balances need attention':'All tracked balances are current','◷')}${stat('Up to date',rows.length-due.length,'Based on your chosen review interval','✓')}${stat('Review interval','12 months','Default for new accounts; adjustable per account','↻')}</div><section class="panel"><div class="panel-head"><div><h3>Balance review reminders</h3><p>Set the date you last checked each balance. Wealth Manager highlights overdue or missing review dates.</p></div></div>${rows.length?`<div class="table-wrap"><table><thead><tr><th>Account</th><th>Type</th><th class="num">Balance</th><th>Last reviewed</th><th>Review every (months)</th><th>Status</th><th></th></tr></thead><tbody>${rows.map(x=>`<tr><td class="loan-name-cell">${escapeHTML(x.item.name)}</td><td>${escapeHTML(x.kind)}</td><td class="num">${fmt(x.balance)}</td><td><input class="control-input review-date" type="date" data-review-group="${x.group}" data-id="${escapeHTML(x.item.id)}" value="${escapeHTML(x.item.reviewedAt||'')}" aria-label="Last reviewed date"></td><td><input class="control-input review-interval" type="number" min="1" max="60" data-review-group="${x.group}" data-id="${escapeHTML(x.item.id)}" value="${x.review.interval}" aria-label="Review interval in months"></td><td><span class="badge ${x.review.due?'review-due':''}">${escapeHTML(x.review.label)}</span></td><td><button class="small-btn" data-action="mark-reviewed" data-group="${x.group}" data-id="${escapeHTML(x.item.id)}">Reviewed today</button></td></tr>`).join('')}</tbody></table></div>`:'<div class="empty">Add an asset balance, loan, or other liability to set review reminders.</div>'}</section><div class="warning">Reminders are stored locally in this browser. Wealth Manager does not send push notifications or access financial accounts.</div>`;
 }
-function dataPage(){return `${heading('Import & export','Changes are auto-saved in this browser. Download a complete backup or portable CSV data files.') }<div class="two-col"><section class="panel"><div class="panel-head"><div><h3>Save your financial plan</h3><p>JSON includes loans, assets, cash flow, debts, goals, and review dates.</p></div></div><button class="btn btn-primary" data-action="export-json" style="width:100%">↓ Save complete Wealth Manager backup (JSON)</button><button class="btn" data-action="export-all-csv" style="width:100%;margin-top:9px">↓ Download all CSV files</button><button class="btn" data-action="export-loans" style="width:100%;margin-top:9px">Export loans CSV</button><button class="btn" data-action="export-prepayments" style="width:100%;margin-top:9px">Export prepayments CSV</button><button class="btn" data-action="export-bonuses" style="width:100%;margin-top:9px">Export bonus plans CSV</button><button class="btn" data-action="export-transactions" style="width:100%;margin-top:9px">Export payment history CSV</button><button class="btn" data-action="download-template" style="width:100%;margin-top:9px">Download loan CSV template</button><div class="success">Last export: ${state.lastExport?dateFmt(state.lastExport.slice(0,10)):'Not recorded in this session'} · ${state.loans.length} loans · ${state.transactions.length} transactions · ${state.planning.goals.length} goals</div></section><section class="panel"><div class="panel-head"><div><h3>Load or restore data</h3><p>Preview and validate data before applying it.</p></div></div><button class="btn btn-primary" data-action="import-json" style="width:100%">↑ Restore JSON backup</button><button class="btn" data-action="import-csv" style="width:100%;margin-top:9px">Import CSV file (including expenses, liabilities and goals)</button><div class="form-grid" style="margin-top:18px"><label>Apply import as<select id="importMode" class="control-input"><option value="replace">Replace imported data</option><option value="merge">Merge records by ID</option></select></label></div><div id="importPreview"></div><div class="warning">CSV export downloads separate files for each data group. Import one CSV at a time; use the JSON backup for a complete restore. Browser storage may be cleared, so keep backups securely.</div></section></div>`}
-function settingsPage(){return `${heading('Settings','Wealth Manager preferences and privacy controls.')}<section class="panel"><div class="form-grid"><label>Portfolio name<input id="portfolioName" value="${escapeHTML(state.portfolioName)}"></label><label>Default currency<select id="currency" disabled><option>INR — Indian Rupee (₹)</option></select></label><label>Default financial goal<select id="settingsGoal" class="control-input"><option ${state.settings.goal==='Balanced'?'selected':''}>Balanced</option><option ${state.settings.goal==='Minimize interest'?'selected':''}>Minimize interest</option><option ${state.settings.goal==='Debt-free date'?'selected':''}>Debt-free date</option><option>Reduce monthly obligation</option></select></label><label>Reporting year<select id="reportingYear" class="control-input"><option>Indian financial year (Apr–Mar)</option><option>Calendar year (Jan–Dec)</option></select></label></div><div style="margin-top:20px"><button class="btn btn-primary" data-action="save-settings">Save settings</button><button class="btn btn-danger" data-action="reset-sample" style="margin-left:8px">Reset to sample portfolio</button></div></section><section class="panel"><h3>Calculation conventions</h3><p class="muted" style="line-height:1.7">Monthly reducing balance uses outstanding principal × annual interest rate ÷ 12. Daily outstanding mode estimates accrued interest using actual calendar days and a 365/366 day basis per period. The engine applies scheduled EMI first, then configured prepayments on that due date. Lender-specific conventions can differ, especially for daily interest, prepayment timing, fees, floating-rate resets and EMI recalculation.</p><p class="muted" style="line-height:1.7">Wealth Manager stores planning data locally in your browser; it does not connect to financial accounts or send portfolio details to a server. Optional web fonts may be requested if the device is online.</p></section>`}
-const renderers={dashboard,loanDashboard,loans:loansPage,prepayments:prepaymentsPage,bonus:bonusPage,advisor:advisorPage,scenarios:scenariosPage,schedule:schedulePage,reports:reportsPage,networth:networthPage,cashflow:cashflowPage,goals:goalsPage,emergencyFund:emergencyFundPage,calendar:cashflowCalendarPage,whatif:whatIfPage,reviews:reviewsPage,data:dataPage,settings:settingsPage};
-const titles={dashboard:['OVERVIEW','Your financial picture, made clearer.'],loanDashboard:['LOAN OVERVIEW','Your repayment plan, made clearer.'],loans:['PORTFOLIO','Manage your loans.'],prepayments:['PAYMENT PLANS','Make extra payments count.'],bonus:['WINDFALL PLANNER','Give every bonus a job.'],advisor:['SMART ALLOCATION','Compare where extra money goes.'],scenarios:['WHAT-IF PLANNING','Test a plan before committing.'],schedule:['AMORTIZATION','See every repayment period.'],reports:['ANALYTICS','Understand the full repayment picture.'],networth:['WEALTH PLANNING','See where your whole financial picture could go.'],cashflow:['CASH FLOW','Balance income, commitments, and surplus.'],goals:['YOUR GOALS','Make progress towards what matters.'],emergencyFund:['SAFETY NET','Build a liquid emergency reserve.'],calendar:['UPCOMING CASH FLOW','See planned cash flow by month.'],whatif:['WHAT-IF PLANNING','Explore possibilities without changing your plan.'],reviews:['ACCOUNT HEALTH','Keep your financial balances up to date.'],data:['PORTABILITY','Your data, under your control.'],settings:['PREFERENCES','Set the rules for your workspace.']};
-function render(){let t=titles[page]||titles.dashboard;$('#crumb').textContent=t[0];$('#pageTitle').textContent=t[1];$('#content').innerHTML=(renderers[page]||dashboard)();$$('.nav-item').forEach(b=>b.classList.toggle('active',b.dataset.page===page));if(page==='loanDashboard')drawBalanceChart();if(page==='dashboard'||page==='networth')drawNetworthChart();if(page==='whatif')drawWhatIfChart();if(page==='schedule'){const el=$('#scheduleLoan');if(el)el.addEventListener('change',()=>{activeSchedule=el.value;render()});const period=$('#schedulePeriod');if(period)period.addEventListener('change',()=>{const l=state.loans.find(x=>x.id===activeSchedule),sc=LoanCalc.simulateLoan(l,{prepayments:state.prepayments});let rows=sc.rows;if(period.value==='quarter')rows=LoanCalc.scheduleSummary(rows,'quarter');if(period.value==='year')rows=LoanCalc.scheduleSummary(rows,'year');if(period.value==='fy'){let m=new Map();rows.forEach(r=>{let k=LoanReports.financialYear(r.date);if(!m.has(k))m.set(k,{period:'FY '+k,principal:0,interest:0,prepayment:0,fees:0,cash:0,closing:0});let x=m.get(k);['principal','interest','prepayment','fees','cash'].forEach(k=>x[k]+=r[k]);x.closing=r.closing});rows=[...m.values()]}$('#scheduleTable').innerHTML=scheduleTable(rows.map(r=>({...r,opening:r.opening??0,emi:r.emi??r.cash})))})}}
+function familyDashboard(){
+ const summary=PortfolioFamily.summarize(workspace),history=[...workspace.family.history].sort((a,b)=>a.date.localeCompare(b.date)),first=history[0],last=history[history.length-1],growth=first&&last&&first.date!==last.date?last.netWorth-first.netWorth:null;
+ return `${heading('Family wealth','Each family member has one portfolio. Select a member to manage their finances.',`<button class="btn" data-action="family-import">Import family data</button><button class="btn" data-action="family-export">Export family overview</button>`)}
+ <div class="warning">Family data is stored in this browser. Anyone using this browser profile can view it.</div>
+ <div class="stats-grid">${stat('Family net worth',fmt(summary.totals.netWorth),'Assets less liabilities','₹')}${stat('Family assets',fmt(summary.totals.assets),'Member portfolios and shared assets','◉')}${stat('Family liabilities',fmt(summary.totals.liabilities),'Loans and tracked debts','↘')}${stat('Net worth change',growth===null?'Not available':`${growth>=0?'+':''}${fmt(growth)}`,history.length>1?`${first.date} to ${last.date}`:'No earlier saved valuation','↗')}</div>
+ <section class="panel"><div class="panel-head"><div><h3>Family members</h3><p>One member equals one portfolio. Rename a member here; their financial data stays with them.</p></div></div>${summary.members.length?`<div class="table-wrap"><table><thead><tr><th>Member</th><th class="num">Assets</th><th class="num">Liabilities</th><th class="num">Net worth</th><th></th></tr></thead><tbody>${summary.members.map(member=>`<tr><td><input class="control-input member-name-input" data-member-portfolio="${escapeHTML(member.id)}" value="${escapeHTML(member.name)}" aria-label="Member name"></td><td class="num">${fmt(member.assets)}</td><td class="num">${fmt(member.liabilities)}</td><td class="num">${fmt(member.netWorth)}</td><td><button class="small-btn" data-action="rename-family-member" data-id="${escapeHTML(member.id)}">Save</button> <button class="small-btn" data-action="family-open-member" data-id="${escapeHTML(member.id)}">Open</button></td></tr>`).join('')}</tbody></table></div>`:'<div class="empty">Add a family member to start tracking their finances.</div>'}</section>
+ ${familyManagementMarkup()}`;
+}
+function familyManagementMarkup(){
+ const assets=workspace.family.assets.filter(item=>!(item.sourcePortfolioId&&workspace.portfolios.some(p=>p.id===item.sourcePortfolioId&&(p.data.networth?.assets||[]).some(a=>a.id===item.sourceAssetId))));
+ const liabilities=workspace.family.liabilities.filter(item=>!(item.sourcePortfolioId&&workspace.portfolios.some(p=>p.id===item.sourcePortfolioId&&[...(p.data.loans||[]),...(p.data.planning?.liabilities||[])].some(r=>r.id===item.sourceRecordId))));
+ const assetRows=assets.map(item=>`<tr><td>${escapeHTML(item.name)}</td><td class="num">${fmt(item.value)}</td><td><button class="small-btn" data-action="delete-shared-asset" data-id="${escapeHTML(item.id)}">Remove</button></td></tr>`).join('');
+ const liabilityRows=liabilities.map(item=>`<tr><td>${escapeHTML(item.name)}</td><td class="num">${fmt(item.balance)}</td><td><button class="small-btn" data-action="delete-shared-liability" data-id="${escapeHTML(item.id)}">Remove</button></td></tr>`).join('');
+ return `<section class="panel"><h3>Add family member</h3><div class="member-add-row"><input id="newFamilyMemberName" class="control-input" maxlength="80" placeholder="Member name"><button class="btn btn-primary" data-action="family-add-member">＋ Add member</button></div></section>
+ <section class="panel"><div class="panel-head"><div><h3>Shared household assets</h3><p>Use this only for assets not already recorded in a member's portfolio.</p></div></div><div class="member-add-row"><input id="familyAssetName" class="control-input" placeholder="Asset name"><input id="familyAssetValue" class="control-input" type="number" min="0" step="0.01" placeholder="Value"><button class="btn" data-action="add-shared-asset">＋ Add</button></div>${assetRows?`<div class="table-wrap"><table><thead><tr><th>Asset</th><th class="num">Value</th><th></th></tr></thead><tbody>${assetRows}</tbody></table></div>`:'<div class="empty">No shared household assets.</div>'}</section>
+ <section class="panel"><div class="panel-head"><div><h3>Shared household liabilities</h3><p>Use this only for debts not already recorded for a member.</p></div></div><div class="member-add-row"><input id="familyLiabilityName" class="control-input" placeholder="Debt name"><input id="familyLiabilityValue" class="control-input" type="number" min="0" step="0.01" placeholder="Balance"><button class="btn" data-action="add-shared-liability">＋ Add</button></div>${liabilityRows?`<div class="table-wrap"><table><thead><tr><th>Debt</th><th class="num">Balance</th><th></th></tr></thead><tbody>${liabilityRows}</tbody></table></div>`:'<div class="empty">No shared household liabilities.</div>'}</section>`;
+}
+function dataPage(){
+ const family=PortfolioFamily.summarize(workspace),portfolioOptions=workspace.portfolios.map(p=>`<option value="${escapeHTML(p.id)}" ${p.id===workspace.activePortfolioId?'selected':''}>${escapeHTML(p.name)}${p.archived?' (archived)':''}</option>`).join('');
+ const history=workspace.importHistory.slice(-8).reverse().map(x=>`<tr><td>${escapeHTML(x.filename)}</td><td>${escapeHTML(x.scope)}</td><td>${escapeHTML(x.date)}</td><td>${escapeHTML(x.status)}</td><td>${Number(x.created)||0} created · ${Number(x.updated)||0} updated · ${Number(x.rejected)||0} rejected</td></tr>`).join('');
+ return `${heading('Import & export','Choose a member or family backup. Each member is one portfolio.')}
+ <div class="two-col"><section class="panel"><div class="panel-head"><div><h3>Export data</h3><p>CSV and JSON exports contain sensitive financial information. Store downloaded files securely.</p></div></div>
+ <div class="form-grid"><label>Export scope<select id="exportScope" class="control-input"><option value="current">Current member</option><option value="selected">Selected members</option><option value="family">Entire family</option></select></label><label>Member for single-member export<select id="exportPortfolio" class="control-input">${portfolioOptions}</select></label><label class="wide">Members for multi-member backup<select id="selectedPortfolios" class="control-input" multiple size="${Math.min(Math.max(workspace.portfolios.length,2),6)}">${workspace.portfolios.map(p=>`<option value="${escapeHTML(p.id)}">${escapeHTML(p.name)}</option>`).join('')}</select><small>Use Ctrl/Command to select multiple members. Export scope must be “Selected members.”</small></label></div>
+ <button class="btn btn-primary" data-action="export-json" style="width:100%;margin-top:12px">↓ Export complete JSON backup</button><button class="btn" data-action="export-family-csv" style="width:100%;margin-top:9px">↓ Export family summary CSV</button><button class="btn" data-action="export-all-csv" style="width:100%;margin-top:9px">↓ Download current member CSV files</button>
+ <div class="form-grid" style="margin-top:18px"><label>Template<select id="templateType" class="control-input"><option value="loans">Loans</option><option value="multiPortfolioLoans">Loans for multiple members</option><option value="assets">Assets</option><option value="liabilities">Liabilities</option><option value="transactions">Transactions</option><option value="prepayments">Prepayments</option><option value="bonuses">Bonuses</option></select></label><button class="btn" data-action="download-template" style="align-self:end">Download CSV template</button></div>
+ <div class="warning">Templates contain headers and generic examples only. Loan imports require id, name, originalAmount, principal, rate, emi, tenure, dueDate (YYYY-MM-DD), and status. Multi-member loan files also require portfolioId. Amounts are INR.</div>
+ <div class="success">Current member: ${escapeHTML(state.portfolioName)} · ${state.loans.length} loans · ${state.transactions.length} transactions · ${workspace.portfolios.length} member(s)</div></section>
+ <section class="panel"><div class="panel-head"><div><h3>Import data</h3><p>Existing CSV data groups and JSON backups are supported. XLSX is not supported by this offline app.</p></div></div>
+ <div class="form-grid"><label>Destination member<select id="importPortfolioScope" class="control-input">${portfolioOptions}<option value="new">Create a new member</option><option value="family">Family data / complete family backup</option><option value="mapped">Map loans by member</option></select></label><label>Apply as<select id="importMode" class="control-input"><option value="replace">Replace matching data</option><option value="merge">Merge by stable ID</option></select></label></div>
+ <label class="control-label" style="margin-top:12px">New member name (when creating a member)<input id="newImportPortfolioName" class="control-input" maxlength="80" placeholder="e.g. Alex"></label>
+ <button class="btn btn-primary" data-action="import-json" style="width:100%;margin-top:12px">↑ Import JSON backup</button><button class="btn" data-action="import-csv" style="width:100%;margin-top:9px">Import a CSV file</button><div id="importPreview"></div><div class="warning">The selected destination is captured when file selection starts. CSV files import one supported data type at a time; use JSON for a complete multi-portfolio/family restore.</div></section></div>
+ <section class="panel"><div class="panel-head"><div><h3>Import history</h3><p>Stored locally; file contents are not retained.</p></div></div>${history?`<div class="table-wrap"><table><thead><tr><th>File</th><th>Scope</th><th>Date</th><th>Status</th><th>Counts</th></tr></thead><tbody>${history}</tbody></table></div>`:'<div class="empty">No imports have been recorded.</div>'}</section>`;
+}
+function settingsPage(){
+ const portfolios=workspace.portfolios.map(p=>`<tr><td>${escapeHTML(p.name)}</td><td>${p.archived?'Archived':'Active'}</td><td>${p.id===workspace.defaultPortfolioId?'Default':''}</td><td><button class="small-btn" data-action="make-default" data-id="${escapeHTML(p.id)}">Set default</button> <button class="small-btn" data-action="toggle-portfolio-archive" data-id="${escapeHTML(p.id)}">${p.archived?'Restore':'Archive'}</button></td></tr>`).join('');
+ return `${heading('Settings','Manage family members and local planning preferences.')}<section class="panel"><div class="form-grid"><label>Member name<input id="portfolioName" value="${escapeHTML(state.portfolioName)}"></label><label>Default currency<select id="currency" disabled><option>INR — Indian Rupee (₹)</option></select></label><label>Default financial goal<select id="settingsGoal" class="control-input"><option ${state.settings.goal==='Balanced'?'selected':''}>Balanced</option><option ${state.settings.goal==='Minimize interest'?'selected':''}>Minimize interest</option><option ${state.settings.goal==='Debt-free date'?'selected':''}>Debt-free date</option><option>Reduce monthly obligation</option></select></label><label>Reporting year<select id="reportingYear" class="control-input"><option>Indian financial year (Apr–Mar)</option><option>Calendar year (Jan–Dec)</option></select></label></div><div style="margin-top:20px"><button class="btn btn-primary" data-action="save-settings">Save settings</button><button class="btn btn-danger" data-action="reset-sample" style="margin-left:8px">Reset to sample data</button></div></section><section class="panel"><div class="panel-head"><div><h3>Family members</h3><p>Each member has one separate set of financial data. Archiving keeps that data for later.</p></div></div><div class="form-grid"><label>New member name<input id="newPortfolioName" maxlength="80" placeholder="e.g. Alex"></label><button class="btn" data-action="create-portfolio" style="align-self:end">＋ Add member</button></div><div class="table-wrap"><table><thead><tr><th>Member</th><th>Status</th><th>Default</th><th>Actions</th></tr></thead><tbody>${portfolios}</tbody></table></div></section><section class="panel"><h3>Calculation conventions</h3><p class="muted" style="line-height:1.7">Monthly reducing balance uses outstanding principal × annual interest rate ÷ 12. Daily outstanding mode estimates accrued interest using actual calendar days and a 365/366 day basis per period. The engine applies scheduled EMI first, then configured prepayments on that due date. Lender-specific conventions can differ, especially for daily interest, prepayment timing, fees, floating-rate resets and EMI recalculation.</p><p class="muted" style="line-height:1.7">Wealth Manager stores planning data locally in your browser; it does not connect to financial accounts or send portfolio details to a server. This device-local family feature has no account-based authorization.</p></section>`;
+}
+const renderers={dashboard,loanDashboard,family:familyDashboard,loans:loansPage,prepayments:prepaymentsPage,bonus:bonusPage,advisor:advisorPage,scenarios:scenariosPage,schedule:schedulePage,reports:reportsPage,networth:networthPage,cashflow:cashflowPage,goals:goalsPage,emergencyFund:emergencyFundPage,calendar:cashflowCalendarPage,whatif:whatIfPage,reviews:reviewsPage,data:dataPage,settings:settingsPage};
+const titles={dashboard:['OVERVIEW','Your financial picture, made clearer.'],loanDashboard:['LOAN OVERVIEW','Your repayment plan, made clearer.'],family:['FAMILY WEALTH','Your household financial picture.'],loans:['PORTFOLIO','Manage your loans.'],prepayments:['PAYMENT PLANS','Make extra payments count.'],bonus:['WINDFALL PLANNER','Give every bonus a job.'],advisor:['SMART ALLOCATION','Compare where extra money goes.'],scenarios:['WHAT-IF PLANNING','Test a plan before committing.'],schedule:['AMORTIZATION','See every repayment period.'],reports:['ANALYTICS','Understand the full repayment picture.'],networth:['WEALTH PLANNING','See where your whole financial picture could go.'],cashflow:['CASH FLOW','Balance income, commitments, and surplus.'],goals:['YOUR GOALS','Make progress towards what matters.'],emergencyFund:['SAFETY NET','Build a liquid emergency reserve.'],calendar:['UPCOMING CASH FLOW','See planned cash flow by month.'],whatif:['WHAT-IF PLANNING','Explore possibilities without changing your plan.'],reviews:['ACCOUNT HEALTH','Keep your financial balances up to date.'],data:['PORTABILITY','Your data, under your control.'],settings:['PREFERENCES','Set the rules for your workspace.']};
+function render(){let t=titles[page]||titles.dashboard;$('#crumb').textContent=t[0];$('#pageTitle').textContent=t[1];$('#content').innerHTML=(renderers[page]||dashboard)();const switcher=$('#portfolioSwitcher');if(switcher){switcher.innerHTML=workspace.portfolios.map(p=>{const summary=PortfolioFamily.portfolioSummary(p);return `<option value="${escapeHTML(p.id)}" ${p.id===workspace.activePortfolioId?'selected':''}>${escapeHTML(p.name)}${p.archived?' (archived)':''}</option>`}).join('');switcher.disabled=!!pendingImportPortfolioId||!$('#modalBackdrop').classList.contains('hidden')}updateResumeDraft();$$('.nav-item').forEach(b=>b.classList.toggle('active',b.dataset.page===page));if(page==='loanDashboard')drawBalanceChart();if(page==='dashboard'||page==='networth')drawNetworthChart();if(page==='whatif')drawWhatIfChart();if(page==='schedule'){const el=$('#scheduleLoan');if(el)el.addEventListener('change',()=>{activeSchedule=el.value;render()});const period=$('#schedulePeriod');if(period)period.addEventListener('change',()=>{const l=state.loans.find(x=>x.id===activeSchedule),sc=LoanCalc.simulateLoan(l,{prepayments:state.prepayments});let rows=sc.rows;if(period.value==='quarter')rows=LoanCalc.scheduleSummary(rows,'quarter');if(period.value==='year')rows=LoanCalc.scheduleSummary(rows,'year');if(period.value==='fy'){let m=new Map();rows.forEach(r=>{let k=LoanReports.financialYear(r.date);if(!m.has(k))m.set(k,{period:'FY '+k,principal:0,interest:0,prepayment:0,fees:0,cash:0,closing:0});let x=m.get(k);['principal','interest','prepayment','fees','cash'].forEach(k=>x[k]+=r[k]);x.closing=r.closing});rows=[...m.values()]}$('#scheduleTable').innerHTML=scheduleTable(rows.map(r=>({...r,opening:r.opening??0,emi:r.emi??r.cash})))})}}
 function drawBalanceChart(){const c=$('#balanceChart');if(!c)return;const ctx=c.getContext('2d'),data=activeLoans().slice(0,7);const w=c.clientWidth||500,h=c.clientHeight||230,dpr=window.devicePixelRatio||1;c.width=w*dpr;c.height=h*dpr;ctx.scale(dpr,dpr);ctx.clearRect(0,0,w,h);const css=getComputedStyle(document.body),muted=css.getPropertyValue('--muted'),line=css.getPropertyValue('--line'),green=css.getPropertyValue('--green');const max=Math.max(1,...data.map(x=>+x.principal));const left=10,right=12,top=12,bottom=35,chartH=h-top-bottom;ctx.font='10px DM Sans, sans-serif';data.forEach((l,i)=>{let slot=(w-left-right)/Math.max(1,data.length),barW=Math.min(36,slot*.48),x=left+slot*i+(slot-barW)/2,bh=chartH*(l.principal/max);ctx.fillStyle=green;ctx.beginPath();let y=top+chartH-bh;ctx.roundRect(x,y,barW,bh,4);ctx.fill();ctx.fillStyle=muted;ctx.textAlign='center';let name=l.name.length>10?l.name.slice(0,9)+'…':l.name;ctx.fillText(name,x+barW/2,h-14);});ctx.strokeStyle=line;ctx.beginPath();ctx.moveTo(left,h-bottom+1);ctx.lineTo(w-right,h-bottom+1);ctx.stroke()}
 function drawNetworthChart(){const c=$('#networthChart');if(!c)return;const points=NetWorthCalc.project(state.networth,state.loans,state.prepayments,LoanCalc,state.planning.liabilities,state.planning.goals,state.bonuses).timeline,ctx=c.getContext('2d'),w=c.clientWidth||700,h=c.clientHeight||280,dpr=window.devicePixelRatio||1;c.width=w*dpr;c.height=h*dpr;ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,w,h);const css=getComputedStyle(document.body),muted=css.getPropertyValue('--muted'),line=css.getPropertyValue('--line');const series=[{key:'assets',color:'#0e8f70'},{key:'liabilities',color:'#d88a37'},{key:'netWorth',color:'#4773c2'},{key:'realNetWorth',color:'#9a65bd'}],values=points.flatMap(p=>series.map(s=>p[s.key])),min=Math.min(0,...values),max=Math.max(1,...values),left=60,right=16,top=18,bottom=32,plotW=w-left-right,plotH=h-top-bottom,span=max-min||1,x=i=>left+plotW*i/Math.max(1,points.length-1),y=v=>top+(max-v)/span*plotH;ctx.font='10px DM Sans, sans-serif';ctx.textAlign='right';ctx.textBaseline='middle';ctx.strokeStyle=line;ctx.fillStyle=muted;for(let i=0;i<=4;i++){const value=min+(max-min)*i/4,py=y(value);ctx.beginPath();ctx.moveTo(left,py);ctx.lineTo(w-right,py);ctx.stroke();ctx.fillText(new Intl.NumberFormat('en-IN',{notation:'compact',maximumFractionDigits:1}).format(value),left-8,py)}for(const s of series){ctx.beginPath();points.forEach((p,i)=>{const px=x(i),py=y(p[s.key]);if(i===0)ctx.moveTo(px,py);else ctx.lineTo(px,py)});ctx.strokeStyle=s.color;ctx.lineWidth=2.5;ctx.stroke()}ctx.fillStyle=muted;ctx.textAlign='center';ctx.textBaseline='top';const last=points.length-1;[0,Math.floor(last/2),last].filter((v,i,a)=>a.indexOf(v)===i).forEach(i=>ctx.fillText(i===0?'Today':`Year ${points[i].year}`,x(i),h-bottom+10))}
 function drawWhatIfChart(){const c=$('#whatIfChart');if(!c)return;const {baseline,scenario}=whatIfProjections(),ctx=c.getContext('2d'),w=c.clientWidth||700,h=c.clientHeight||280,dpr=window.devicePixelRatio||1;c.width=w*dpr;c.height=h*dpr;ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,w,h);const series=[{points:baseline,color:'#4773c2'},{points:scenario,color:'#0e8f70'}],values=series.flatMap(s=>s.points.map(p=>p.netWorth)),min=Math.min(0,...values),max=Math.max(1,...values),left=60,right=16,top=18,bottom=32,plotW=w-left-right,plotH=h-top-bottom,span=max-min||1,x=i=>left+plotW*i/Math.max(1,baseline.length-1),y=v=>top+(max-v)/span*plotH,css=getComputedStyle(document.body);ctx.font='10px DM Sans, sans-serif';ctx.textAlign='right';ctx.textBaseline='middle';ctx.fillStyle=css.getPropertyValue('--muted');ctx.strokeStyle=css.getPropertyValue('--line');for(let i=0;i<=4;i++){const value=min+(max-min)*i/4,py=y(value);ctx.beginPath();ctx.moveTo(left,py);ctx.lineTo(w-right,py);ctx.stroke();ctx.fillText(new Intl.NumberFormat('en-IN',{notation:'compact',maximumFractionDigits:1}).format(value),left-8,py)}for(const s of series){ctx.beginPath();s.points.forEach((p,i)=>{if(i===0)ctx.moveTo(x(i),y(p.netWorth));else ctx.lineTo(x(i),y(p.netWorth))});ctx.strokeStyle=s.color;ctx.lineWidth=2.5;ctx.stroke()}}
 function loanFormValues(){const values={};for(const el of $('#loanForm').elements){if(el.name)values[el.name]=el.type==='checkbox'?el.checked:el.value}return values}
-function saveLoanDraft(){if($('#modalBackdrop').classList.contains('hidden'))return;try{localStorage.setItem(DRAFT_KEY,JSON.stringify({editingId,title:$('#modalTitle').textContent,values:loanFormValues()}));$('#saveStatus').textContent='● Draft saved locally'}catch(e){$('#saveStatus').textContent='● Draft save failed'}}
+function saveLoanDraft(){if($('#modalBackdrop').classList.contains('hidden'))return;try{localStorage.setItem(draftStorageKey(),JSON.stringify({portfolioId:workspace.activePortfolioId,editingId,title:$('#modalTitle').textContent,values:loanFormValues()}));$('#saveStatus').textContent='● Draft saved locally'}catch(e){$('#saveStatus').textContent='● Draft save failed'}}
 function applyLoanDraft(draft){const form=$('#loanForm');Object.entries(draft.values||{}).forEach(([k,v])=>{const el=form.elements[k];if(el){if(el.type==='checkbox')el.checked=!!v;else el.value=v}})}
-function openModal(title,id,restoreDraft=false){editingId=id||null;$('#modalTitle').textContent=title;const form=$('#loanForm');form.reset();const l=id?state.loans.find(x=>x.id===id):null;const set=(k,v)=>{if(form.elements[k])form.elements[k].value=v??''};if(l){Object.keys(l).forEach(k=>{if(form.elements[k]?.type==='checkbox')form.elements[k].checked=!!l[k];else set(k,l[k])})}else{set('originalAmount',0);set('principal',0);set('rate',8.5);set('emi',0);set('tenure',120);set('dueDate',today());set('feeRate',0);set('minPrepay',0);if(form.elements.eligible)form.elements.eligible.checked=true}if(restoreDraft){let draft;try{draft=JSON.parse(localStorage.getItem(DRAFT_KEY)||'null')}catch(e){}if(draft&&draft.editingId===(id||null))applyLoanDraft(draft)}else{localStorage.removeItem(DRAFT_KEY);$('#resumeDraft').classList.add('hidden')}$('#modalBackdrop').classList.remove('hidden');saveLoanDraft()}
-function closeModal(discardDraft=false){$('#modalBackdrop').classList.add('hidden');if(discardDraft){localStorage.removeItem(DRAFT_KEY);$('#resumeDraft').classList.add('hidden');$('#saveStatus').textContent='● Auto-saved locally'}else{$('#resumeDraft').classList.remove('hidden')}}
+function openModal(title,id,restoreDraft=false){editingId=id||null;$('#modalTitle').textContent=title;const form=$('#loanForm');form.reset();const l=id?state.loans.find(x=>x.id===id):null;const set=(k,v)=>{if(form.elements[k])form.elements[k].value=v??''};if(l){Object.keys(l).forEach(k=>{if(form.elements[k]?.type==='checkbox')form.elements[k].checked=!!l[k];else set(k,l[k])})}else{set('originalAmount',0);set('principal',0);set('rate',8.5);set('emi',0);set('tenure',120);set('dueDate',today());set('feeRate',0);set('minPrepay',0);if(form.elements.eligible)form.elements.eligible.checked=true}if(restoreDraft){const draft=readLoanDraft();if(draft&&draft.editingId===(id||null))applyLoanDraft(draft)}else{localStorage.removeItem(draftStorageKey());$('#resumeDraft').classList.add('hidden')}$('#modalBackdrop').classList.remove('hidden');$('#portfolioSwitcher').disabled=true;saveLoanDraft()}
+function closeModal(discardDraft=false){$('#modalBackdrop').classList.add('hidden');$('#portfolioSwitcher').disabled=!!pendingImportPortfolioId;if(discardDraft){localStorage.removeItem(draftStorageKey());$('#resumeDraft').classList.add('hidden');$('#saveStatus').textContent='● Auto-saved locally'}else updateResumeDraft()}
 function addLoan(data){const l={...data,id:uid('LN'),createdAt:new Date().toISOString(),modifiedAt:new Date().toISOString()};state.loans.push(l);saveDirty();render()}
 function editLoan(id,data){const i=state.loans.findIndex(x=>x.id===id);if(i>=0)state.loans[i]={...state.loans[i],...data,modifiedAt:new Date().toISOString()};saveDirty();render()}
 function saveLoanForm(e){e.preventDefault();const f=new FormData(e.target),d=Object.fromEntries(f.entries());['originalAmount','principal','rate','emi','tenure','feeRate','minPrepay','monthlyPrepayLimitPct','financialYearPrepayLimitPct'].forEach(k=>d[k]=Number(d[k]||0));d.eligible=f.has('eligible');d.status=d.status||'Active';if(d.principal>d.originalAmount&&d.originalAmount>0&&!confirm('Outstanding principal is greater than the original loan amount. Save anyway?'))return;if(editingId)editLoan(editingId,d);else addLoan(d);closeModal(true)}
@@ -203,7 +250,10 @@ case'bonus-advisor':{const bonus=state.bonuses.find(x=>x.id===id);if(bonus){cons
 case'run-advisor':runAdvisor();break;case'run-scenario':runScenario();break;
 case'accept-advisor':if(scenarioResult?.candidates){let c=scenarioResult.candidates[+b.dataset.index||0];if(c){state._acceptedScenario=c;alert('Recommendation kept in this session as a scenario preview. Original loans and payment history are unchanged.');page='scenarios';render()}}break;
 case'save-scenario-plan':if(scenarioResult?.loanId){let s=scenarioResult;state.prepayments.push({id:uid('PP'),loanId:s.loanId,name:'Scenario lump sum',amount:s.amount,startDate:s.date,endDate:s.date,frequency:'One-time',status:'Active',notes:'Created from scenario comparison'});saveDirty();render();alert('Prepayment plan saved to the portfolio. Export a backup to keep it.')}break;
-case'export-json':state.lastExport=new Date().toISOString();CSVUtils.exportPortfolio(state);$('#saveStatus').textContent='● Exported';break;case'export-all-csv':CSVUtils.exportAllCSV(state);state.lastExport=new Date().toISOString();break;
+case'export-json':exportWorkspaceJson();state.lastExport=new Date().toISOString();$('#saveStatus').textContent='● Exported';break;case'export-all-csv':{const target=workspace.portfolios.find(p=>p.id===$('#exportPortfolio')?.value)||activePortfolio();CSVUtils.exportAllCSV(target.id===workspace.activePortfolioId?state:target.data);state.lastExport=new Date().toISOString();break}case'export-family-csv':exportFamilySummary();break;case'family-export':exportFamilySummary();break;
+case'portfolio-import':page='data';render();$('#importPortfolioScope').value=workspace.activePortfolioId;break;
+case'portfolio-export':page='data';render();$('#exportScope').value='current';$('#exportPortfolio').value=workspace.activePortfolioId;break;
+case'family-import':page='data';render();$('#importPortfolioScope').value='family';break;
 case'export-loans':CSVUtils.downloadCSV('loans.csv',state.loans,CSVUtils.headers.loans);break;case'export-prepayments':CSVUtils.downloadCSV('prepayments.csv',state.prepayments,CSVUtils.headers.prepayments);break;case'export-bonuses':CSVUtils.downloadCSV('bonus_plans.csv',state.bonuses,CSVUtils.headers.bonuses);break;case'export-transactions':CSVUtils.downloadCSV('transactions.csv',state.transactions,CSVUtils.headers.transactions);break;
 case'add-networth-asset':state.networth.assets.push({id:uid('NW-A'),name:'New asset',value:0,annualGrowth:7,emergencyEligible:false});saveDirty();render();break;
 case'remove-networth-asset':state.networth.assets=state.networth.assets.filter(x=>x.id!==id);saveDirty();render();break;
@@ -218,46 +268,261 @@ case'remove-goal':state.planning.goals=state.planning.goals.filter(x=>x.id!==id)
 case'mark-reviewed':{const group=b.dataset.group,items=group==='assets'?state.networth.assets:group==='liabilities'?state.planning.liabilities:state.loans,item=items.find(x=>x.id===id);if(item){item.reviewedAt=today();item.reviewIntervalMonths=FinancialPlanning.reviewStatus(item).interval;saveDirty();render()}break}
 case'export-schedule':{let l=state.loans.find(x=>x.id===activeSchedule),s=LoanCalc.simulateLoan(l,{prepayments:state.prepayments});CSVUtils.downloadCSV('repayment-schedule-'+l.id+'.csv',s.rows);break}
 case'export-monthly':CSVUtils.downloadCSV('monthly-portfolio-report.csv',LoanReports.monthlyPortfolio(sim()));break;case'export-yearly':{let rows=LoanReports.monthlyPortfolio(sim()),m={};rows.forEach(r=>{let y=r.period.slice(0,4);m[y]??={period:y,opening:r.opening,principal:0,interest:0,prepayment:0,fees:0,cash:0,closing:0};['principal','interest','prepayment','fees','cash'].forEach(k=>m[y][k]+=r[k]);m[y].closing=r.closing});CSVUtils.downloadCSV('yearly-portfolio-report.csv',Object.values(m));break}
-case'download-template':CSVUtils.download('loans-template.csv',CSVUtils.toCSV([{id:'LN-001',name:'Example loan',lender:'Bank name',category:'Home Loan',status:'Active',originalAmount:1000000,principal:800000,rate:8.5,emi:12000,tenure:96,dueDate:today(),method:'monthly',feeRate:0,minPrepay:0,eligible:true,notes:''}],CSVUtils.headers.loans));break;
-case'import-json':importMode=$('#importMode')?.value||'replace';$('#fileInput').accept='.json';$('#fileInput').dataset.kind='json';$('#fileInput').click();break;case'import-csv':$('#fileInput').accept='.csv';$('#fileInput').dataset.kind='csv';$('#fileInput').click();break;
-case'save-settings':state.portfolioName=$('#portfolioName').value;state.settings.goal=$('#settingsGoal').value;saveDirty();render();break;case'reset-sample':if(confirm('Replace current portfolio with sample data? Export a backup first if you need to keep it.')){sample();saveDirty();render()}break;
+case'download-template':{
+ const type=$('#templateType')?.value||'loans';
+ const templates={
+  loans:{rows:[{id:'LN-001',name:'Example loan',lender:'Bank name',category:'Home Loan',status:'Active',originalAmount:1000000,principal:800000,rate:8.5,emi:12000,tenure:96,dueDate:today(),method:'monthly',feeRate:0,minPrepay:0,eligible:true,notes:''}],headers:CSVUtils.headers.loans},
+  assets:{rows:[{id:'ASSET-001',name:'Example asset',value:100000,annualGrowth:5,emergencyEligible:false}],headers:CSVUtils.headers.assets},
+  liabilities:{rows:[{id:'DEBT-001',name:'Example liability',type:'Other',balance:25000,annualRate:0,monthlyPayment:0}],headers:CSVUtils.headers.liabilities},
+  multiPortfolioLoans:{rows:[{portfolioId:activePortfolio().id,id:'LN-001',name:'Example loan',lender:'Bank name',category:'Home Loan',status:'Active',originalAmount:1000000,principal:800000,rate:8.5,emi:12000,tenure:96,dueDate:today(),method:'monthly',feeRate:0,minPrepay:0,eligible:true,notes:''}],headers:['portfolioId',...CSVUtils.headers.loans]},
+  transactions:{rows:[{id:'TX-001',loanId:'LN-001',date:today(),type:'Payment',amount:1000,principal:800,interest:200,fees:0,reference:'',notes:''}],headers:CSVUtils.headers.transactions},
+  prepayments:{rows:[{id:'PP-001',loanId:'LN-001',name:'Example plan',amount:5000,startDate:today(),endDate:'',frequency:'One-time',status:'Active',notes:''}],headers:CSVUtils.headers.prepayments},
+  bonuses:{rows:[{id:'BN-001',name:'Example bonus',amount:25000,date:today(),frequency:'One-time',reservePercent:0,emergencyReserve:0,strategy:'Balanced',status:'Estimated'}],headers:CSVUtils.headers.bonuses},
+  familyMembers:{rows:[{id:'MEM-001',name:'Example member',role:'Member'}],headers:CSVUtils.headers.familyMembers},
+  portfolioOwnership:{rows:[{portfolioId:activePortfolio().id,memberId:'MEM-001',sharePct:100}],headers:CSVUtils.headers.portfolioOwnership},
+  familyAssets:{rows:[{id:'FASSET-001',name:'Example shared asset',type:'Other',value:100000,owners:'[]'}],headers:CSVUtils.headers.familyAssets},
+  familyLiabilities:{rows:[{id:'FLIAB-001',name:'Example shared liability',type:'Other',balance:25000,owners:'[]'}],headers:CSVUtils.headers.familyLiabilities}
+ };
+ const template=templates[type];CSVUtils.download(`${type}-template.csv`,CSVUtils.toCSV(template.rows,template.headers));break;
+}
+case'import-json':startImport('json');break;case'import-csv':startImport('csv');break;
+case'family-add-member':{const name=$('#newFamilyMemberName')?.value.trim();if(!name){alert('Enter a member name.');$('#newFamilyMemberName')?.focus();break}createPortfolio(name);break}
+case'family-open-member':{const member=workspace.portfolios.find(x=>x.id===id);if(member){switchPortfolio(id);page='dashboard';render()}break}
+case'rename-family-member':{const member=workspace.portfolios.find(x=>x.id===id),name=$(`[data-member-portfolio="${CSS.escape(id)}"]`)?.value.trim();if(!member)break;if(!name){alert('Member name is required.');break}member.name=name;member.data.portfolioName=name;if(id===workspace.activePortfolioId)state.portfolioName=name;saveDirty();render();break}
+case'edit-family-member':{const member=workspace.family.members.find(x=>x.id===id),name=$(`[data-member-name="${CSS.escape(id)}"]`)?.value.trim(),role=$(`[data-member-role="${CSS.escape(id)}"]`)?.value.trim()||'Member';if(member){if(!name){alert('Member name is required.');break}member.name=name;member.role=role;saveDirty();render()}break}
+case'delete-family-member':if(confirm('Remove this family member? Their ownership allocations will become unassigned, while shared records and portfolio values remain intact.')){workspace.family.members=workspace.family.members.filter(x=>x.id!==id);workspace.portfolios.forEach(p=>p.owners=p.owners.filter(x=>x.memberId!==id));[...workspace.family.assets,...workspace.family.liabilities].forEach(r=>r.owners=r.owners.filter(x=>x.memberId!==id));saveDirty();render()}break;
+case'save-portfolio-owners':{const portfolio=workspace.portfolios.find(x=>x.id===id),input=$(`[data-owner-portfolio="${CSS.escape(id)}"]`),owners=ownershipFromText(input?.value),errors=PortfolioFamily.validateOwnership(owners,workspace.family.members);if(errors.length){alert(errors.join('\n'));break}if(portfolio){portfolio.owners=owners;saveDirty();render()}break}
+case'add-shared-asset':addFamilyRecord('assets');break;case'add-shared-liability':addFamilyRecord('liabilities');break;
+case'delete-shared-asset':case'delete-shared-liability':{const group=a==='delete-shared-asset'?'assets':'liabilities';workspace.family[group]=workspace.family[group].filter(x=>x.id!==id);saveDirty();render();break}
+case'create-portfolio':{const name=$('#newPortfolioName')?.value.trim();if(!name){alert('Enter a member name.');break}createPortfolio(name);break}
+case'make-default':{const portfolio=workspace.portfolios.find(x=>x.id===id);if(portfolio&&!portfolio.archived){workspace.defaultPortfolioId=id;saveDirty();render()}break}
+case'toggle-portfolio-archive':{const portfolio=workspace.portfolios.find(x=>x.id===id);if(!portfolio)break;if(!portfolio.archived&&workspace.portfolios.filter(x=>!x.archived).length===1){alert('At least one portfolio must remain active.');break}portfolio.archived=!portfolio.archived;if(portfolio.archived&&workspace.defaultPortfolioId===id)workspace.defaultPortfolioId=workspace.portfolios.find(x=>!x.archived)?.id||workspace.activePortfolioId;if(portfolio.archived&&workspace.activePortfolioId===id){const next=workspace.portfolios.find(x=>!x.archived);if(next)switchPortfolio(next.id)}saveDirty();render();break}
+case'save-settings':state.portfolioName=$('#portfolioName').value.trim()||'My Financial Plan';state.settings.goal=$('#settingsGoal').value;saveDirty();render();break;case'reset-sample':if(confirm('Replace current portfolio with sample data? Export a backup first if you need to keep it.')){sample();saveDirty();render()}break;
 }}
 function mergeRecords(existing,incoming){const merged=new Map((existing||[]).map(x=>[x.id,x]));incoming.forEach(x=>merged.set(x.id,x));return [...merged.values()]}
+function ownershipFromText(value){
+ if(!String(value||'').trim())return [];
+ return String(value).split(',').map(part=>{const [memberId,sharePct]=part.trim().split(':');return {memberId:String(memberId||'').trim(),sharePct:Number(sharePct)}});
+}
+function addFamilyRecord(type){
+ const isAsset=type==='assets',name=$(`#family${isAsset?'Asset':'Liability'}Name`).value.trim(),amount=$(`#family${isAsset?'Asset':'Liability'}Value`).value;
+ if(!name){alert('Enter a record name.');return}
+ if(amount===''){alert('Enter an amount; leave it as 0 only when the recorded balance is actually zero.');return}
+ const value=Number(amount);if(!Number.isFinite(value)||value<0){alert('Enter a valid non-negative amount.');return}
+ const record={id:uid(isAsset?'FASSET':'FLIAB'),name:name.trim(),type:'Other',owners:[]};
+ if(isAsset)record.value=value;else record.balance=value;
+ workspace.family[isAsset?'assets':'liabilities'].push(record);saveDirty();render();
+}
+function recordImport(file,scope,status,counts={}){
+ workspace.importHistory.push({filename:file.name,scope,date:new Date().toISOString(),status,created:Number(counts.created)||0,updated:Number(counts.updated)||0,skipped:Number(counts.skipped)||0,rejected:Number(counts.rejected)||0});
+ workspace.importHistory=workspace.importHistory.slice(-100);
+}
+function rejectImport(file,scope,errors,rowCount){
+ const details=(errors||[]).map(message=>({error:String(message)}));
+ if(details.length)CSVUtils.downloadCSV(`${file.name.replace(/\.[^.]+$/,'')}_errors_${today()}.csv`,details,['error']);
+ recordImport(file,scope,'rejected',{rejected:rowCount||details.length});saveToStorage();
+ alert(`CSV validation failed:\n${details.slice(0,12).map(x=>x.error).join('\n')}${details.length>12?'\nSee the downloaded error report for remaining issues.':''}`);
+}
+function repeatedImportIdentifiers(rows,dataType){
+ const seen=new Set(),duplicates=new Set();
+ rows.forEach(row=>{
+  const key=dataType==='portfolioOwnership'?`${row.portfolioId}|${row.memberId}`:['networthSettings','planningSettings'].includes(dataType)?row.key:dataType==='loans'&&row.portfolioId?`${row.portfolioId}|${row.id}`:row.id;
+  if(key&&seen.has(key))duplicates.add(key);else if(key)seen.add(key);
+ });
+ return [...duplicates];
+}
+function importRecordCounts(existing,incoming){const ids=new Set((existing||[]).map(x=>x.id));const updated=incoming.filter(x=>ids.has(x.id)).length;return {created:incoming.length-updated,updated}}
+function exportWorkspaceJson(){
+ capturePortfolio();
+ const scope=$('#exportScope')?.value||'current';
+ if(scope==='family'){
+  CSVUtils.download(`family-financial-backup_${today()}.json`,JSON.stringify({...workspace,exportedAt:new Date().toISOString()},null,2),'application/json');return;
+ }
+ if(scope==='selected'){
+  const selectedIds=new Set([...($('#selectedPortfolios')?.selectedOptions||[])].map(x=>x.value));
+  if(!selectedIds.size){alert('Select at least one portfolio to export.');return}
+  const subset=PortfolioFamily.clone(workspace);subset.portfolios=subset.portfolios.filter(p=>selectedIds.has(p.id));
+  const memberIds=new Set(subset.portfolios.flatMap(p=>p.owners.map(x=>x.memberId)));
+  subset.family.members=subset.family.members.filter(m=>memberIds.has(m.id));
+  subset.family.assets=subset.family.assets.filter(x=>!x.sourcePortfolioId||selectedIds.has(x.sourcePortfolioId));
+  subset.family.liabilities=subset.family.liabilities.filter(x=>!x.sourcePortfolioId||selectedIds.has(x.sourcePortfolioId));
+  subset.family.history=[];
+  subset.defaultPortfolioId=selectedIds.has(subset.defaultPortfolioId)?subset.defaultPortfolioId:subset.portfolios[0].id;
+  subset.activePortfolioId=selectedIds.has(subset.activePortfolioId)?subset.activePortfolioId:subset.portfolios[0].id;
+  CSVUtils.download(`selected-portfolios-backup_${today()}.json`,JSON.stringify({...subset,exportedAt:new Date().toISOString()},null,2),'application/json');return;
+ }
+ const portfolio=workspace.portfolios.find(x=>x.id===$('#exportPortfolio')?.value)||activePortfolio();
+ const memberIds=new Set(portfolio.owners.map(x=>x.memberId));
+ CSVUtils.download(`${portfolio.name.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'')}_backup_${today()}.json`,JSON.stringify({schemaVersion:5,exportedAt:new Date().toISOString(),portfolio:PortfolioFamily.clone(portfolio),family:{name:workspace.family.name,members:workspace.family.members.filter(x=>memberIds.has(x.id)),assets:[],liabilities:[]}},null,2),'application/json');
+}
+function exportFamilySummary(){
+ const summary=PortfolioFamily.summarize(workspace),rows=[
+  {recordType:'family',id:workspace.family.name,name:workspace.family.name,assets:summary.totals.assets,liabilities:summary.totals.liabilities,netWorth:summary.totals.netWorth},
+  {recordType:'shared household',id:'shared',name:'Shared household records',assets:summary.shared.assets,liabilities:summary.shared.liabilities,netWorth:summary.shared.assets-summary.shared.liabilities},
+  ...summary.members.map(x=>({recordType:'member',id:x.id,name:x.name,assets:x.assets,liabilities:x.liabilities,netWorth:x.netWorth})),
+ ];
+ CSVUtils.downloadCSV(`family-net-worth_${today()}.csv`,rows,['recordType','id','name','assets','liabilities','netWorth']);
+}
+function startImport(kind){
+ const selectedMode=$('#importMode')?.value||'replace',scope=$('#importPortfolioScope')?.value||workspace.activePortfolioId;
+ if(scope==='new'){
+  const name=$('#newImportPortfolioName')?.value.trim();if(!name){alert('Enter a name for the new import destination portfolio.');return}
+  createPortfolio(name.trim());
+ }else if(scope!=='family'&&scope!==workspace.activePortfolioId)switchPortfolio(scope);
+ importMode=selectedMode;pendingImportPortfolioId=scope==='family'?'family':scope==='mapped'?'mapped':workspace.activePortfolioId;
+ const input=$('#fileInput');input.accept=kind==='json'?'.json':'.csv';input.dataset.kind=kind;$('#portfolioSwitcher').disabled=true;input.click();
+}
 function importFile(file,kind){
+ const extension=String(file.name||'').toLowerCase().split('.').pop();
+ if(file.size>10*1024*1024){pendingImportPortfolioId=null;$('#portfolioSwitcher').disabled=false;recordImport(file,'Import','rejected',{rejected:1});saveToStorage();alert('Import files are limited to 10 MB.');return}
+ if((kind==='json'&&extension!=='json')||(kind==='csv'&&extension!=='csv')){pendingImportPortfolioId=null;$('#portfolioSwitcher').disabled=false;recordImport(file,'Import','rejected',{rejected:1});saveToStorage();alert('Choose a file with the selected supported format. XLSX is not supported.');return}
+ const targetPortfolioId=pendingImportPortfolioId||workspace.activePortfolioId;
  const reader=new FileReader();
  reader.onload=()=>{
+  pendingImportPortfolioId=null;$('#portfolioSwitcher').disabled=false;
   try{
    if(kind==='json'||file.name.toLowerCase().endsWith('.json')){
     const d=JSON.parse(reader.result);
-    if(!d||!Array.isArray(d.loans))throw Error('This does not look like a Wealth Manager JSON backup.');
-    const summary=`Import preview: ${d.loans.length} loans, ${(d.prepayments||[]).length} prepayments, ${(d.bonuses||[]).length} bonuses, ${(d.transactions||[]).length} transactions, ${(d.networth?.assets||[]).length} assets, ${(d.networth?.incomes||[]).length} income sources, ${(d.planning?.expenses||[]).length} expenses, ${(d.planning?.liabilities||[]).length} additional debts, and ${(d.planning?.goals||[]).length} goals.\n\nApply as ${importMode}?`;
+    if(!d||(!Array.isArray(d.loans)&&!Array.isArray(d.portfolios)&&!d.portfolio?.data))throw Error('This does not look like a Wealth Manager JSON backup.');
+    if(Array.isArray(d.portfolios)){
+     if(targetPortfolioId!=='family'){recordImport(file,'Family workspace','rejected',{rejected:1});saveToStorage();alert('This backup contains portfolio relationships. Select “Family data / complete family backup” as the destination before importing it.');return}
+     const imported=PortfolioFamily.normalizeWorkspace(d,{networth:NetWorthCalc.createDefaults(),planning:FinancialPlanning.createDefaults()});
+     const ownershipErrors=PortfolioFamily.validateWorkspace(imported);
+     if(ownershipErrors.length){CSVUtils.downloadCSV(`${file.name.replace(/\.[^.]+$/,'')}_errors_${today()}.csv`,ownershipErrors.map(error=>({error})),['error']);recordImport(file,'Entire family workspace','rejected',{rejected:ownershipErrors.length});saveToStorage();alert(`Backup ownership validation failed:\n${ownershipErrors.slice(0,10).join('\n')}`);return}
+     const loanCount=imported.portfolios.reduce((sum,p)=>sum+p.data.loans.length,0),summary=`Import preview: ${imported.portfolios.length} portfolios, ${loanCount} loans, ${imported.family.members.length} family members, ${imported.family.assets.length} shared assets, and ${imported.family.liabilities.length} shared liabilities. This includes family structure and ownership mappings.\n\n${importMode==='replace'?'Replace the complete local workspace':'Merge by stable identifiers'}?`;
+     if(!confirm(summary))return;
+     if(importMode==='replace')workspace=imported;
+     else{
+      const existing=new Map(workspace.portfolios.map(p=>[p.id,p]));
+      imported.portfolios.forEach(incoming=>{
+       const current=existing.get(incoming.id);
+       if(!current){workspace.portfolios.push(incoming);return}
+       const data=current.data,incomingData=incoming.data;
+       ['loans','prepayments','bonuses','transactions'].forEach(k=>data[k]=mergeRecords(data[k],incomingData[k]));
+       data.networth=NetWorthCalc.normalize({...data.networth,assets:mergeRecords(data.networth?.assets||[],incomingData.networth.assets),incomes:mergeRecords(data.networth?.incomes||[],incomingData.networth.incomes),assumptions:incomingData.networth.assumptions});
+       data.planning=FinancialPlanning.normalize({...data.planning,expenses:mergeRecords(data.planning?.expenses||[],incomingData.planning.expenses),liabilities:mergeRecords(data.planning?.liabilities||[],incomingData.planning.liabilities),goals:mergeRecords(data.planning?.goals||[],incomingData.planning.goals),assumptions:incomingData.planning.assumptions});
+       current.name=incoming.name;current.owners=incoming.owners;current.archived=incoming.archived;
+      });
+      workspace.family.name=imported.family.name;
+      workspace.family.members=mergeRecords(workspace.family.members,imported.family.members);
+      workspace.family.assets=mergeRecords(workspace.family.assets,imported.family.assets);
+      workspace.family.liabilities=mergeRecords(workspace.family.liabilities,imported.family.liabilities);
+      const history=new Map(workspace.family.history.map(x=>[x.date,x]));imported.family.history.forEach(x=>history.set(x.date,x));workspace.family.history=[...history.values()];
+      workspace.defaultPortfolioId=imported.defaultPortfolioId;
+     }
+     workspace=PortfolioFamily.normalizeWorkspace(workspace,{networth:NetWorthCalc.createDefaults(),planning:FinancialPlanning.createDefaults()});
+     if(!workspace.portfolios.some(p=>p.id===targetPortfolioId))workspace.activePortfolioId=workspace.defaultPortfolioId;
+     else workspace.activePortfolioId=targetPortfolioId;
+     loadPortfolioData(activePortfolio());recordImport(file,'Entire family workspace',importMode==='replace'?'replaced':'merged',{created:imported.portfolios.length});
+     saveDirty();render();alert('Family workspace imported.');return;
+    }
+    if(targetPortfolioId==='family'){recordImport(file,'Family workspace','rejected',{rejected:1});saveToStorage();alert('This is a single-portfolio backup. Select a portfolio destination; use a full family backup for family scope.');return}
+    const importedPortfolio=d.portfolio?.data?d.portfolio: null;
+    const ddata=importedPortfolio?importedPortfolio.data:d;
+    if(!Array.isArray(ddata.loans))throw Error('This does not look like a Wealth Manager portfolio backup.');
+    if(importedPortfolio){const ownerErrors=PortfolioFamily.validateOwnership(importedPortfolio.owners||[],d.family?.members||workspace.family.members);if(ownerErrors.length){recordImport(file,'Portfolio backup','rejected',{rejected:ownerErrors.length});saveToStorage();alert(`Backup ownership validation failed:\n${ownerErrors.join('\n')}`);return}}
+    const sourceConflict=importedPortfolio&&importedPortfolio.id!==targetPortfolioId&&workspace.portfolios.some(p=>p.id===importedPortfolio.id);
+    const summary=`Import preview: ${ddata.loans.length} loans, ${(ddata.prepayments||[]).length} prepayments, ${(ddata.bonuses||[]).length} bonuses, ${(ddata.transactions||[]).length} transactions, ${(ddata.networth?.assets||[]).length} assets, ${(ddata.networth?.incomes||[]).length} income sources, ${(ddata.planning?.expenses||[]).length} expenses, ${(ddata.planning?.liabilities||[]).length} additional debts, and ${(ddata.planning?.goals||[]).length} goals.${sourceConflict?'\n\nWarning: the source portfolio ID already exists; importing here will create a separate copy and may increase family totals.':''}\n\nApply as ${importMode}?`;
     if(!confirm(summary))return;
     if(importMode==='merge'){
-     ['loans','prepayments','bonuses','transactions'].forEach(k=>{state[k]=mergeRecords(state[k],d[k]||[])});
-     if(d.networth){
-      const imported=NetWorthCalc.normalize(d.networth);
+     ['loans','prepayments','bonuses','transactions'].forEach(k=>{state[k]=mergeRecords(state[k],ddata[k]||[])});
+     if(ddata.networth){
+      const imported=NetWorthCalc.normalize(ddata.networth);
       state.networth=NetWorthCalc.normalize(state.networth);
       state.networth.assets=mergeRecords(state.networth.assets,imported.assets);
       state.networth.incomes=mergeRecords(state.networth.incomes,imported.incomes);
       state.networth.assumptions=imported.assumptions;
      }
-     if(d.planning){
-      const imported=FinancialPlanning.normalize(d.planning);
+     if(ddata.planning){
+      const imported=FinancialPlanning.normalize(ddata.planning);
       state.planning=FinancialPlanning.normalize(state.planning);
       ['expenses','liabilities','goals'].forEach(k=>{state.planning[k]=mergeRecords(state.planning[k],imported[k])});
       state.planning.assumptions=imported.assumptions;
      }
     }else{
-     state.loans=d.loans;state.prepayments=d.prepayments||[];state.bonuses=d.bonuses||[];state.transactions=d.transactions||[];
-     state.settings=d.settings||{goal:'Balanced'};state.portfolioName=d.portfolioName||'My Financial Plan';state.networth=NetWorthCalc.normalize(d.networth);state.planning=FinancialPlanning.normalize(d.planning);
+     state.loans=ddata.loans;state.prepayments=ddata.prepayments||[];state.bonuses=ddata.bonuses||[];state.transactions=ddata.transactions||[];
+     state.settings=ddata.settings||{goal:'Balanced'};state.portfolioName=importedPortfolio?.name||ddata.portfolioName||state.portfolioName;state.networth=NetWorthCalc.normalize(ddata.networth);state.planning=FinancialPlanning.normalize(ddata.planning);
     }
+    if(importedPortfolio){
+     let target=workspace.portfolios.find(p=>p.id===targetPortfolioId);
+     const sourceId=String(importedPortfolio.id||'');
+     if(target&&sourceId&&target.id!==sourceId&&!workspace.portfolios.some(p=>p.id===sourceId)){
+      const data=target.data,isEmpty=!(data.loans||[]).length&&!(data.prepayments||[]).length&&!(data.bonuses||[]).length&&!(data.transactions||[]).length&&!(data.networth?.assets||[]).some(x=>Number(x.value)>0)&&!(data.planning?.liabilities||[]).some(x=>Number(x.balance)>0);
+      if(isEmpty){const oldId=target.id;target.id=sourceId;if(workspace.activePortfolioId===oldId)workspace.activePortfolioId=sourceId;if(workspace.defaultPortfolioId===oldId)workspace.defaultPortfolioId=sourceId}
+     }
+     target=workspace.portfolios.find(p=>p.id===workspace.activePortfolioId);
+     if(target){target.name=state.portfolioName;target.owners=importedPortfolio.owners||target.owners}
+     if(d.family){workspace.family.name=d.family.name||workspace.family.name;workspace.family.members=mergeRecords(workspace.family.members,d.family.members||[])}
+    }
+    recordImport(file,state.portfolioName,importMode==='replace'?'replaced':'merged',{created:ddata.loans.length+(ddata.transactions||[]).length});
     saveDirty();render();alert('Portfolio loaded. Review the values and save a new backup.');
     return;
    }
    let rows=CSVUtils.parseCSV(reader.result);
-   if(!rows.length){alert('CSV file contains no data rows.');return}
+   if(!rows.length){recordImport(file,state.portfolioName,'rejected',{rejected:1});saveToStorage();alert('CSV file contains no data rows.');return}
    const filename=file.name.toLowerCase(),columns=Object.keys(rows[0]),dataType=CSVUtils.identifyDataType(filename,columns);
+   const allowedColumns=dataType==='loans'?[...CSVUtils.headers.loans,'portfolioId']:CSVUtils.headers[dataType]||CSVUtils.headers.loans,unknownColumns=columns.filter(key=>!allowedColumns.includes(key));
+   if(unknownColumns.length){rejectImport(file,state.portfolioName,unknownColumns.map(x=>`Unsupported column: ${x}`),rows.length);return}
+   const duplicateInput=repeatedImportIdentifiers(rows,dataType);
+   if(duplicateInput.length){rejectImport(file,state.portfolioName,duplicateInput.map(x=>`Duplicate identifier in file: ${x}`),duplicateInput.length);return}
    if(dataType){
+    if(dataType==='loans'&&(targetPortfolioId==='mapped'||columns.includes('portfolioId'))){
+     const errors=[];
+     if(targetPortfolioId!=='mapped')errors.push('Select “Map a loans CSV by portfolioId” as the import destination.');
+     const grouped=new Map();
+     rows.forEach((r,i)=>{
+      if(!r.portfolioId)errors.push(`Row ${i+2}: portfolioId is required for mapped imports`);
+      else if(!workspace.portfolios.some(p=>p.id===r.portfolioId))errors.push(`Row ${i+2}: portfolioId does not match an existing portfolio`);
+      if(r.portfolioId){if(!grouped.has(r.portfolioId))grouped.set(r.portfolioId,[]);grouped.get(r.portfolioId).push(r)}
+     });
+     grouped.forEach((group,portfolioId)=>CSVUtils.validateLoans(group).forEach(error=>errors.push(`${portfolioId}: ${error}`)));
+     if(errors.length){rejectImport(file,'Mapped portfolios',errors,rows.length);return}
+     const counts={created:0,updated:0};
+     grouped.forEach((group,portfolioId)=>{
+      const portfolio=workspace.portfolios.find(x=>x.id===portfolioId),records=group.map(r=>{const item={...r};delete item.portfolioId;['originalAmount','principal','rate','emi','tenure','feeRate','minPrepay','monthlyPrepayLimitPct','financialYearPrepayLimitPct'].forEach(k=>item[k]=Number(item[k]||0));item.eligible=item.eligible==='true'||item.eligible==='1';return item});
+      const old=portfolio.data.loans||[],oldIds=new Set(old.map(x=>x.id)),newIds=new Set(records.map(x=>x.id));
+      counts.updated+=records.filter(x=>oldIds.has(x.id)).length;counts.created+=records.filter(x=>!oldIds.has(x.id)).length;
+      portfolio.data.loans=importMode==='merge'?mergeRecords(old,records):records;
+      if(importMode==='replace'){portfolio.data.prepayments=(portfolio.data.prepayments||[]).filter(x=>newIds.has(x.loanId));portfolio.data.transactions=(portfolio.data.transactions||[]).filter(x=>newIds.has(x.loanId))}
+     });
+     if(grouped.has(workspace.activePortfolioId))loadPortfolioData(activePortfolio());
+     recordImport(file,'Mapped portfolios',importMode==='merge'?'merged':'replaced',counts);saveDirty();render();alert(`Mapped import complete: ${counts.created} created, ${counts.updated} updated across ${grouped.size} portfolio(s).`);return;
+    }
+    if(dataType==='familyMembers'){
+     if(targetPortfolioId!=='family'){rejectImport(file,'Family data',['Select “Family data / complete family backup” as the import destination.'],rows.length);return}
+     const errors=[];rows.forEach((r,i)=>{if(!r.id||!r.name?.trim())errors.push(`Row ${i+2}: id and name are required`);if(r.name&&r.name.length>80)errors.push(`Row ${i+2}: name must be 80 characters or fewer`)});
+     if(new Set(rows.map(r=>r.id)).size!==rows.length)errors.push('Member IDs must be unique.');
+     if(errors.length){rejectImport(file,'Family data',errors,rows.length);return}
+     const updated=rows.filter(r=>workspace.portfolios.some(p=>p.id===r.id)).length,created=rows.length-updated;
+     if(!confirm(`Import ${rows.length} family members as individual portfolios? ${updated} existing member(s) will be renamed; their financial data will be kept. ${created} new empty member portfolio(s) will be created.`))return;
+     rows.forEach(r=>{
+      const portfolio=workspace.portfolios.find(p=>p.id===r.id);
+      if(portfolio){portfolio.name=r.name.trim();portfolio.data.portfolioName=portfolio.name;if(portfolio.id===workspace.activePortfolioId)state.portfolioName=portfolio.name}
+      else{const createdPortfolio=PortfolioFamily.emptyPortfolio(r.name.trim(),{networth:NetWorthCalc.createDefaults(),planning:FinancialPlanning.createDefaults()});createdPortfolio.id=r.id;workspace.portfolios.push(createdPortfolio)}
+     });
+     workspace.family.members=[];workspace.portfolios.forEach(p=>p.owners=[]);[...workspace.family.assets,...workspace.family.liabilities].forEach(item=>item.owners=[]);
+     recordImport(file,'Family members', 'merged',{created,updated});saveDirty();render();alert('Family members imported as portfolios. Existing financial data was retained.');return;
+    }
+    if(dataType==='portfolioOwnership'){rejectImport(file,'Family data',['Ownership allocations are no longer used. Each family member is one portfolio.'],rows.length);return}
+    if(['familyAssets','familyLiabilities'].includes(dataType)){
+     const errors=[];
+     if(targetPortfolioId!=='family')errors.push('Select “Family data / complete family backup” as the import destination for family-level records.');
+     if(dataType==='familyAssets'||dataType==='familyLiabilities')rows.forEach((r,i)=>{
+      const amountKey=dataType==='familyAssets'?'value':'balance';if(!r.id||!r.name?.trim())errors.push(`Row ${i+2}: id and name are required`);
+      if(r[amountKey]===''||!Number.isFinite(Number(r[amountKey]))||Number(r[amountKey])<0)errors.push(`Row ${i+2}: ${amountKey} must be a non-negative number`);
+      try{const owners=JSON.parse(r.owners||'[]');const ownerErrors=PortfolioFamily.validateOwnership(owners,workspace.family.members);if(ownerErrors.length)errors.push(`Row ${i+2}: ${ownerErrors.join('; ')}`);r.owners=owners}catch(e){errors.push(`Row ${i+2}: owners must be a JSON array of memberId/sharePct allocations`)}
+      if(r.sourcePortfolioId){const portfolio=workspace.portfolios.find(p=>p.id===r.sourcePortfolioId),items=dataType==='familyAssets'?portfolio?.data.networth?.assets:[...(portfolio?.data.loans||[]),...(portfolio?.data.planning?.liabilities||[])],recordId=dataType==='familyAssets'?r.sourceAssetId:r.sourceRecordId;if(!items?.some(x=>x.id===recordId))errors.push(`Row ${i+2}: linked portfolio record was not found`)}
+     });
+     if(errors.length){rejectImport(file,'Family data',errors,rows.length);return}
+     const duplicateCount=rows.filter((r,i)=>rows.findIndex(x=>x.id===r.id)===i&&workspace.family[dataType==='familyAssets'?'assets':'liabilities'].some(x=>x.id===r.id)).length;
+     if(!confirm(`Import preview: ${rows.length} ${dataType} rows; ${duplicateCount} existing record(s) will be updated; ${rows.length-duplicateCount} will be created.\n\nApply as ${importMode}?`))return;
+     if(dataType==='familyAssets'||dataType==='familyLiabilities'){
+      const group=dataType==='familyAssets'?'assets':'liabilities',key=dataType==='familyAssets'?'value':'balance',records=rows.map(r=>({...r,[key]:Number(r[key]),owners:r.owners}));
+      workspace.family[group]=importMode==='merge'?mergeRecords(workspace.family[group],records):records;
+     }
+     recordImport(file,'Family data',importMode==='merge'?'merged':'replaced',{created:rows.length-duplicateCount,updated:duplicateCount});
+     saveDirty();render();alert(`${dataType} imported.`);return;
+    }
     if(['prepayments','bonuses','transactions'].includes(dataType)){
      const errors=[],numericFields=dataType==='prepayments'?['amount']:dataType==='bonuses'?['amount','reservePercent','emergencyReserve']:['amount','principal','interest','fees'];
      const validDate=value=>!value||(/^\d{4}-\d{2}-\d{2}$/.test(value)&&dateString(new Date(`${value}T12:00:00`))===value);
@@ -281,16 +546,18 @@ function importFile(file,kind){
        if(r.status&&!['Estimated','Confirmed','Cancelled'].includes(r.status))errors.push(`Row ${i+2}: unsupported bonus status`);
       }else if(!r.type)errors.push(`Row ${i+2}: transaction type is required`);
      });
-     if(errors.length){alert('CSV validation failed:\n'+errors.slice(0,10).join('\n'));return}
+     if(errors.length){rejectImport(file,state.portfolioName,errors,rows.length);return}
      rows=rows.map(r=>{const item={...r};numericFields.forEach(key=>item[key]=Number(item[key]||0));if(dataType==='bonuses'){item.frequency=item.frequency||'One-time';item.reservePercent=Number(item.reservePercent||0);item.emergencyReserve=Number(item.emergencyReserve||0);item.status=item.status||'Estimated'}return item});
-     if(!confirm(`Import preview: ${rows.length} ${dataType} rows.\nFirst row: ${rows[0].name||rows[0].type}.\n\nApply as ${importMode}?`))return;
+     const counts=importRecordCounts(state[dataType],rows);
+     if(!confirm(`Import preview: ${rows.length} ${dataType} rows; ${counts.created} new and ${counts.updated} matching IDs.\nFirst row: ${rows[0].name||rows[0].type}.\n\nApply as ${importMode}?`))return;
      const target=state[dataType];state[dataType]=importMode==='merge'?mergeRecords(target,rows):rows;
-     saveDirty();render();alert(`${dataType} imported.`);return;
+     recordImport(file,state.portfolioName,importMode==='merge'?'merged':'replaced',counts);saveDirty();render();alert(`${dataType} imported.`);return;
     }
+    let importCounts={created:rows.length,updated:0};
     if(dataType==='networthSettings'||dataType==='planningSettings'){
      const isPlanning=dataType==='planningSettings',allowed=isPlanning?['inflationRate','emergencyFundMonths']:['savingsRate','contributionGrowth','projectionYears','inflationRate'];
      const invalid=rows.filter(r=>{const value=Number(r.value);return !allowed.includes(r.key)||!Number.isFinite(value)||(r.key==='projectionYears'?(!Number.isInteger(value)||value<1||value>40):r.key==='emergencyFundMonths'?(!Number.isInteger(value)||value<1||value>24):(value<0||value>(r.key==='inflationRate'?30:100)))});
-     if(invalid.length){alert(`CSV validation failed: unsupported ${isPlanning?'planning':'net-worth'} setting or invalid value.`);return}
+     if(invalid.length){rejectImport(file,state.portfolioName,invalid.map(x=>`Unsupported setting or invalid value: ${x.key}`),invalid.length);return}
      if(!confirm(`Import preview: ${rows.length} ${isPlanning?'planning':'net-worth'} assumptions.\n\nApply as ${importMode}?`))return;
      const imported=Object.fromEntries(rows.map(r=>[r.key,Number(r.value)]));
      if(isPlanning)state.planning=FinancialPlanning.normalize({...state.planning,assumptions:{...state.planning.assumptions,...imported}});
@@ -305,7 +572,7 @@ function importFile(file,kind){
       for(const key of dataType==='goals'?['targetAmount','currentAmount','monthlyContribution']:dataType==='liabilities'?['balance','annualRate','monthlyPayment']:dataType==='assets'||dataType==='incomes'||dataType==='expenses'?[amountKey,'annualGrowth']:[])if(r[key]===''||!Number.isFinite(Number(r[key]))||Number(r[key])<(key==='annualGrowth'?-100:0)||(key==='annualGrowth'&&Number(r[key])>100)||(key==='annualRate'&&Number(r[key])>100))errors.push(`Row ${i+2}: ${key} must be a valid non-negative number`);
       if(dataType==='goals'&&r.targetDate&&!/^\d{4}-\d{2}-\d{2}$/.test(r.targetDate))errors.push(`Row ${i+2}: targetDate must use YYYY-MM-DD`);
      });
-     if(errors.length){alert('CSV validation failed:\n'+errors.slice(0,10).join('\n'));return}
+     if(errors.length){rejectImport(file,state.portfolioName,errors,rows.length);return}
      rows=rows.map(r=>{
       const item={...r};
       for(const key of dataType==='goals'?['targetAmount','currentAmount','monthlyContribution']:dataType==='liabilities'?['balance','annualRate','monthlyPayment']:dataType==='assets'?['value','annualGrowth']:dataType==='incomes'||dataType==='expenses'?['monthlyAmount','annualGrowth']:[])item[key]=Number(item[key]||0);
@@ -315,16 +582,18 @@ function importFile(file,kind){
       if(dataType==='assets')item.reviewIntervalMonths=Number(item.reviewIntervalMonths)||12;
       return item;
      });
-     if(!confirm(`Import preview: ${rows.length} ${dataType} rows.\nFirst row: ${rows[0].name||rows[0].key}.\n\nApply as ${importMode}?`))return;
+     const existing=group==='networth'?state.networth[dataType]:state.planning[dataType];importCounts=importRecordCounts(existing,rows);
+     if(!confirm(`Import preview: ${rows.length} ${dataType} rows; ${importCounts.created} new and ${importCounts.updated} matching IDs.\nFirst row: ${rows[0].name||rows[0].key}.\n\nApply as ${importMode}?`))return;
      if(group==='networth'){state.networth=NetWorthCalc.normalize(state.networth);state.networth[dataType]=importMode==='merge'?mergeRecords(state.networth[dataType],rows):rows}
      else{state.planning=FinancialPlanning.normalize(state.planning);state.planning[dataType]=importMode==='merge'?mergeRecords(state.planning[dataType],rows):rows}
     }
-    saveDirty();render();    alert('Financial data imported.');
+    recordImport(file,state.portfolioName,importMode==='merge'?'merged':'replaced',importCounts);saveDirty();render();alert('Financial data imported.');
     return;
    }
    const errors=CSVUtils.validateLoans(rows);
-   if(errors.length){alert('CSV validation failed:\n'+errors.slice(0,10).join('\n'));return}
-   if(!confirm(`Import preview: ${rows.length} loan rows.\nFirst row: ${rows[0].name} · outstanding ${fmt(rows[0].principal)}.\n\nApply as ${importMode}?`))return;
+   if(errors.length){rejectImport(file,state.portfolioName,errors,rows.length);return}
+   const counts=importRecordCounts(state.loans,rows);
+   if(!confirm(`Import preview: ${rows.length} loan rows; ${counts.created} new and ${counts.updated} matching IDs.\nFirst row: ${rows[0].name} · outstanding ${fmt(rows[0].principal)}.\n\nApply as ${importMode}?`))return;
    rows=rows.map(r=>({...r,originalAmount:+r.originalAmount,principal:+r.principal,rate:+r.rate,emi:+r.emi,tenure:+r.tenure,feeRate:+r.feeRate||0,minPrepay:+r.minPrepay||0,monthlyPrepayLimitPct:+r.monthlyPrepayLimitPct||0,financialYearPrepayLimitPct:+r.financialYearPrepayLimitPct||0,eligible:r.eligible==='true'||r.eligible==='1'}));
    if(importMode==='merge')state.loans=mergeRecords(state.loans,rows);
    else{
@@ -333,17 +602,19 @@ function importFile(file,kind){
     state.prepayments=state.prepayments.filter(x=>loanIds.has(x.loanId));
     state.transactions=state.transactions.filter(x=>loanIds.has(x.loanId));
    }
-   saveDirty();render();alert('Loans imported. Existing prepayment plans and payment history were retained only for matching loan IDs; bonus and other planning data were not changed.');
-  }catch(e){alert('Could not import file: '+e.message)}
+   recordImport(file,state.portfolioName,importMode==='merge'?'merged':'replaced',counts);saveDirty();render();alert('Loans imported. Existing prepayment plans and payment history were retained only for matching loan IDs; bonus and other planning data were not changed.');
+  }catch(e){recordImport(file,'Import','failed',{rejected:1});saveToStorage();alert('Could not import file: '+e.message)}
  };
- reader.onerror=()=>alert('Could not read the selected file.');
+ reader.onerror=()=>{pendingImportPortfolioId=null;$('#portfolioSwitcher').disabled=false;recordImport(file,state.portfolioName,'failed',{rejected:1});saveToStorage();alert('Could not read the selected file.')};
  reader.readAsText(file);
 }
-$('#nav').addEventListener('click',e=>{const b=e.target.closest('[data-page]');if(b){page=b.dataset.page;render()}});
+$('#nav').addEventListener('click',e=>{const b=e.target.closest('[data-page]');if(b){page=b.dataset.page;if(window.matchMedia('(max-width:720px)').matches){$('.app-shell').classList.remove('mobile-nav-open');syncMenuToggle()}render()}});
 $('#content').addEventListener('click',e=>{const b=e.target.closest('button');if(b?.dataset.page){page=b.dataset.page;render();return}if(b?.dataset.action)handleAction(b)});
-$('#quickAdd').onclick=()=>openModal('Add loan');$('#resumeDraft').onclick=()=>{let draft;try{draft=JSON.parse(localStorage.getItem(DRAFT_KEY)||'null')}catch(e){}if(draft?.values)openModal(draft.title||(draft.editingId?'Edit loan':'Add loan'),draft.editingId,true)};$('#modalClose').onclick=()=>closeModal();$('#cancelLoan').onclick=()=>closeModal(true);$('#modalBackdrop').addEventListener('click',e=>{if(e.target.id==='modalBackdrop')closeModal()});$('#loanForm').addEventListener('submit',saveLoanForm);$('#loanForm').addEventListener('input',saveLoanDraft);$('#loanForm').addEventListener('change',saveLoanDraft);
+$('#portfolioSwitcher').addEventListener('change',e=>switchPortfolio(e.target.value));
+function syncMenuToggle(){const mobile=window.matchMedia('(max-width:720px)').matches,expanded=mobile?$('.app-shell').classList.contains('mobile-nav-open'):!$('.app-shell').classList.contains('sidebar-collapsed');$('#menuToggle').setAttribute('aria-expanded',String(expanded));$('#menuToggle').setAttribute('aria-label',mobile?(expanded?'Close navigation':'Open navigation'):(expanded?'Collapse navigation':'Expand navigation'))}
+$('#menuToggle').onclick=()=>{const shell=$('.app-shell');const mobile=window.matchMedia('(max-width:720px)').matches;const collapsed=!mobile&&!shell.classList.contains('sidebar-collapsed'),open=mobile?!shell.classList.contains('mobile-nav-open'):!collapsed;shell.classList.toggle(mobile?'mobile-nav-open':'sidebar-collapsed',mobile?open:collapsed);syncMenuToggle()};syncMenuToggle();$('#resumeDraft').onclick=()=>{const draft=readLoanDraft();if(draft?.values)openModal(draft.title||(draft.editingId?'Edit loan':'Add loan'),draft.editingId,true)};$('#modalClose').onclick=()=>closeModal();$('#cancelLoan').onclick=()=>closeModal(true);$('#modalBackdrop').addEventListener('click',e=>{if(e.target.id==='modalBackdrop')closeModal()});$('#loanForm').addEventListener('submit',saveLoanForm);$('#loanForm').addEventListener('input',saveLoanDraft);$('#loanForm').addEventListener('change',saveLoanDraft);
 $('#themeBtn').onclick=()=>{document.body.classList.toggle('dark');$('#themeBtn').textContent=document.body.classList.contains('dark')?'☼ Light':'◐ Theme';if(page==='loanDashboard')drawBalanceChart();if(page==='dashboard'||page==='networth')drawNetworthChart();if(page==='whatif')drawWhatIfChart()};
-$('#fileInput').addEventListener('change',e=>{let file=e.target.files[0];if(file)importFile(file,e.target.dataset.kind);e.target.value=''});
+$('#fileInput').addEventListener('change',e=>{let file=e.target.files[0];if(file)importFile(file,e.target.dataset.kind);else{pendingImportPortfolioId=null;$('#portfolioSwitcher').disabled=false}e.target.value=''});
 function updateWhatIf(){
  whatIf.savingsRate=Number($('#whatIfSavings').value);whatIf.returnDelta=Number($('#whatIfReturn').value);whatIf.incomeGrowthDelta=Number($('#whatIfIncome').value);whatIf.monthlyLoanExtra=Number($('#whatIfExtra').value)||0;whatIf.loanId=$('#whatIfLoan').value;
  $('#whatIfSavingsLabel').textContent=`${whatIf.savingsRate}%`;$('#whatIfReturnLabel').textContent=`${whatIf.returnDelta}%`;$('#whatIfIncomeLabel').textContent=`${whatIf.incomeGrowthDelta}%`;
@@ -381,6 +652,6 @@ $('#content').addEventListener('change',e=>{
   if(item){if(e.target.classList.contains('review-date'))item.reviewedAt=e.target.value;else item.reviewIntervalMonths=Math.max(1,Math.min(60,Number(e.target.value)||12));saveDirty();render()}
  }
 });
-window.addEventListener('resize',()=>{if(page==='loanDashboard')drawBalanceChart();if(page==='dashboard'||page==='networth')drawNetworthChart();if(page==='whatif')drawWhatIfChart()});
-const storageReady=loadFromStorage()||(sample(),saveToStorage());render();$('#saveStatus').textContent=storageReady?'● Auto-saved locally':'● Auto-save unavailable — export a backup';try{const draft=JSON.parse(localStorage.getItem(DRAFT_KEY)||'null');if(draft?.values)$('#resumeDraft').classList.remove('hidden')}catch(e){}
+window.addEventListener('resize',()=>{syncMenuToggle();if(page==='loanDashboard')drawBalanceChart();if(page==='dashboard'||page==='networth')drawNetworthChart();if(page==='whatif')drawWhatIfChart()});
+const storageReady=loadFromStorage()||(loadPortfolioData(activePortfolio()),saveToStorage());migrateLoanDraft();render();$('#saveStatus').textContent=storageReady?'● Auto-saved locally':'● Auto-save unavailable — export a backup';
 })();
