@@ -23,13 +23,20 @@ function bounded(value,fallback,min,max){
 function dateString(date){
  return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`;
 }
+function goalMonthlyContribution(goal){
+ return Math.max(0,Number(goal.monthlyContribution)||0)+(goal.assetPlans||[]).reduce((sum,plan)=>sum+Math.max(0,Number(plan.monthlyContribution)||0),0);
+}
+function goalLinkedValue(goal,assets=[]){
+ const assetById=new Map((assets||[]).map(asset=>[String(asset.id),asset]));
+ return (goal.assetPlans||[]).reduce((sum,plan)=>sum+Math.max(0,Number(assetById.get(String(plan.assetId))?.value)||0),0);
+}
 function normalize(data){
  const defaults=createDefaults(),source=data&&typeof data==='object'?data:{};
  const normalizeRows=(rows,fallback,kind)=>Array.isArray(rows)?rows.filter(x=>x&&typeof x==='object').map((x,i)=>{
   const common={id:String(x.id||`FP-${kind}-${i+1}`),name:String(x.name||'Untitled')};
   if(kind==='expense')return {...common,monthlyAmount:bounded(x.monthlyAmount,0,0,Number.MAX_VALUE),annualGrowth:bounded(x.annualGrowth,0,-100,100),essential:x.essential===undefined?expenseDefaults.some(d=>d.id===x.id&&d.essential):x.essential===true||x.essential==='true'||x.essential===1};
   if(kind==='liability')return {...common,type:String(x.type||'Other debt'),balance:bounded(x.balance,0,0,Number.MAX_VALUE),annualRate:bounded(x.annualRate,0,0,100),monthlyPayment:bounded(x.monthlyPayment,0,0,Number.MAX_VALUE),reviewedAt:String(x.reviewedAt||''),reviewIntervalMonths:Math.floor(bounded(x.reviewIntervalMonths,12,1,60))};
-  return {...common,targetAmount:bounded(x.targetAmount,0,0,Number.MAX_VALUE),currentAmount:bounded(x.currentAmount,0,0,Number.MAX_VALUE),monthlyContribution:bounded(x.monthlyContribution,0,0,Number.MAX_VALUE),targetDate:String(x.targetDate||''),createdAt:String(x.createdAt||'')};
+  return {...common,targetAmount:bounded(x.targetAmount,0,0,Number.MAX_VALUE),currentAmount:bounded(x.currentAmount,0,0,Number.MAX_VALUE),monthlyContribution:bounded(x.monthlyContribution,0,0,Number.MAX_VALUE),assetPlans:Array.isArray(x.assetPlans)?x.assetPlans.filter(plan=>plan&&typeof plan==='object').map(plan=>({assetId:String(plan.assetId||''),monthlyContribution:bounded(plan.monthlyContribution,0,0,Number.MAX_VALUE),annualGrowth:plan.annualGrowth===undefined||plan.annualGrowth===null||plan.annualGrowth===''?null:bounded(plan.annualGrowth,0,-100,100)})):[],targetDate:String(x.targetDate||''),createdAt:String(x.createdAt||'')};
  }):fallback;
  const assumptions=source.assumptions&&typeof source.assumptions==='object'?source.assumptions:{};
  return {
@@ -46,7 +53,7 @@ function emergencyFund(assets,expenses,targetMonths=6){
  const months=Math.max(1,Math.min(24,Math.floor(Number(targetMonths)||6))),target=essentialExpenses*months;
  return {essentialExpenses,liquidAssets,target,monthsCovered:essentialExpenses?liquidAssets/essentialExpenses:null,targetMonths:months,remaining:Math.max(0,target-liquidAssets),progress:target?Math.min(100,liquidAssets/target*100):0};
 }
-function cashflowCalendar({loans=[],prepayments=[],expenses=[],liabilities=[],goals=[],bonuses=[],incomes=[],savingsRate=0,asOf=new Date(),months=12}={}){
+function cashflowCalendar({loans=[],prepayments=[],expenses=[],liabilities=[],goals=[],assets=[],bonuses=[],incomes=[],savingsRate=0,asOf=new Date(),months=12}={}){
  const horizon=Math.floor(Math.max(1,Math.min(24,Number(months)||12))),start=new Date(asOf.getFullYear(),asOf.getMonth(),asOf.getDate()),endMonth=new Date(start.getFullYear(),start.getMonth()+horizon,1),events=[];
  const validDate=value=>value&&/^\d{4}-\d{2}-\d{2}$/.test(value)&&!Number.isNaN(new Date(`${value}T12:00:00`).getTime());
  const dateText=dateString,monthDate=(year,month,day)=>new Date(year,month,Math.min(day,new Date(year,month+1,0).getDate()),12);
@@ -63,9 +70,10 @@ function cashflowCalendar({loans=[],prepayments=[],expenses=[],liabilities=[],go
   for(let i=0;i<horizon;i++){push(estimateDate(i),item.name||'Recurring expense','Expense',Number(item.monthlyAmount),'out',i===0?'Estimated this month; due date not specified':'Estimated monthly expense')}
  });
  const goalContributions=Array(horizon).fill(0);
- (goals||[]).filter(x=>Number(x.monthlyContribution)>0&&Number(x.targetAmount)>Number(x.currentAmount||0)).forEach(goal=>{
-  let remaining=Number(goal.targetAmount)-Number(goal.currentAmount||0);
-  for(let i=0;i<horizon&&remaining>0;i++){const amount=Math.min(remaining,Number(goal.monthlyContribution));push(estimateDate(i),goal.name||'Goal contribution','Goal contribution',amount,'out',i===0?'Estimated this month; date not specified':'Estimated monthly contribution');goalContributions[i]+=amount;remaining-=amount}
+ (goals||[]).filter(x=>goalMonthlyContribution(x)>0&&Number(x.targetAmount)>Number(x.currentAmount||0)+goalLinkedValue(x,assets)).forEach(goal=>{
+  let remaining=Number(goal.targetAmount)-Number(goal.currentAmount||0)-goalLinkedValue(goal,assets);
+  const contribution=goalMonthlyContribution(goal);
+  for(let i=0;i<horizon&&remaining>0;i++){const amount=Math.min(remaining,contribution);if(amount>0){push(estimateDate(i),goal.name||'Goal contribution','Goal contribution',amount,'out',i===0?'Estimated this month; date not specified':'Estimated monthly contribution');goalContributions[i]+=amount;remaining-=amount}}
  });
  for(let i=0;i<horizon;i++){
   const date=estimateDate(i);
@@ -102,12 +110,12 @@ function cashflowCalendar({loans=[],prepayments=[],expenses=[],liabilities=[],go
  });
  return events.sort((a,b)=>a.date.localeCompare(b.date)||a.direction.localeCompare(b.direction)||a.label.localeCompare(b.label));
 }
-function cashflow(incomes,expenses,loans,liabilities,goals=[],prepayments=[],savingsRate=0,asOf=new Date()){
+function cashflow(incomes,expenses,loans,liabilities,goals=[],prepayments=[],savingsRate=0,asOf=new Date(),assets=[]){
  const income=(incomes||[]).reduce((sum,x)=>sum+Math.max(0,Number(x.monthlyAmount)||0),0);
  const expense=(expenses||[]).reduce((sum,x)=>sum+Math.max(0,Number(x.monthlyAmount)||0),0);
  const emi=(loans||[]).filter(x=>x.status==='Active').reduce((sum,x)=>sum+Math.max(0,Number(x.emi)||0),0);
  const debtPayments=(liabilities||[]).filter(x=>Number(x.balance)>0).reduce((sum,x)=>sum+Math.max(0,Number(x.monthlyPayment)||0),0);
- const goalContributions=(goals||[]).filter(x=>Number(x.targetAmount)>Number(x.currentAmount||0)).reduce((sum,x)=>sum+Math.max(0,Number(x.monthlyContribution)||0),0);
+ const goalContributions=(goals||[]).filter(x=>Number(x.targetAmount)>Number(x.currentAmount||0)+goalLinkedValue(x,assets)).reduce((sum,x)=>sum+goalMonthlyContribution(x),0);
  const monthlyEquivalent={Monthly:1,Quarterly:1/3,'Half-yearly':1/6,Annual:1/12};
  const currentDate=dateString(asOf),activeLoanIds=new Set((loans||[]).filter(x=>x.status==='Active').map(x=>x.id)),activePlans=(prepayments||[]).filter(x=>x.status==='Active'&&(!x.loanId||activeLoanIds.has(x.loanId))&&(!x.endDate||x.endDate>=currentDate));
  const isRecurring=x=>Object.prototype.hasOwnProperty.call(monthlyEquivalent,x.frequency);
@@ -119,18 +127,45 @@ function cashflow(incomes,expenses,loans,liabilities,goals=[],prepayments=[],sav
  const totalCommitments=expense+emi+debtPayments+goalContributions+additionalSavings+plannedPrepayments;
  return {income,expenses:expense,emi,debtPayments,goalContributions,additionalSavings,savingsTarget,plannedPrepayments,upcomingPrepayments,totalCommitments,surplus:income-totalCommitments};
 }
-function goalProjection(goal,asOf=new Date()){
- const remaining=Math.max(0,(Number(goal.targetAmount)||0)-(Number(goal.currentAmount)||0));
- const contribution=Math.max(0,Number(goal.monthlyContribution)||0);
- const months=remaining===0?0:contribution>0?Math.ceil(remaining/contribution):null;
+function goalProjection(goal,asOf=new Date(),assets=[]){
+ const assetById=new Map((assets||[]).map(asset=>[String(asset.id),asset]));
+ const plans=(goal.assetPlans||[]).map(plan=>({plan,asset:assetById.get(String(plan.assetId))})).filter(item=>item.asset);
+ const assetValue=goalLinkedValue(goal,assets);
+ const startingValue=Math.max(0,Number(goal.currentAmount)||0)+assetValue;
+ const remaining=Math.max(0,(Number(goal.targetAmount)||0)-startingValue);
+ const balances=plans.map(({plan,asset})=>({
+  value:Math.max(0,Number(asset.value)||0),
+  monthlyContribution:Math.max(0,Number(plan.monthlyContribution)||0),
+  annualGrowth:plan.annualGrowth===null||plan.annualGrowth===undefined?Number(asset.annualGrowth)||0:Number(plan.annualGrowth)
+ }));
+ let months=0,totalContributions=0,projectedValue=startingValue;
+ if(remaining>0){
+  months=null;
+  for(let month=1;month<=1200;month++){
+   balances.forEach(balance=>{
+    const monthlyRate=Math.pow(1+balance.annualGrowth/100,1/12)-1;
+    balance.value=Math.max(0,balance.value*(1+monthlyRate))+balance.monthlyContribution;
+    totalContributions+=balance.monthlyContribution;
+   });
+   const additionalContribution=Math.max(0,Number(goal.monthlyContribution)||0);
+   totalContributions+=additionalContribution;
+   projectedValue=Math.max(0,Number(goal.currentAmount)||0)+balances.reduce((sum,balance)=>sum+balance.value,0)+month*additionalContribution;
+   if(projectedValue+0.005>=Number(goal.targetAmount)||!Number.isFinite(projectedValue)) {
+    if(Number.isFinite(projectedValue)&&projectedValue+0.005>=Number(goal.targetAmount))months=month;
+    break;
+   }
+  }
+ }else projectedValue=startingValue;
  let completionDate=null;
  if(months!==null){
   const date=new Date(asOf.getFullYear(),asOf.getMonth()+months,1);
   date.setDate(Math.min(asOf.getDate(),new Date(date.getFullYear(),date.getMonth()+1,0).getDate()));
   completionDate=dateString(date);
  }
- const progress=Number(goal.targetAmount)>0?Math.min(100,Math.max(0,Number(goal.currentAmount||0)/Number(goal.targetAmount)*100)):0;
- return {remaining,months,completionDate,progress};
+ const progress=Number(goal.targetAmount)>0?Math.min(100,Math.max(0,startingValue/Number(goal.targetAmount)*100)):0;
+ const growth=months===null?null:projectedValue-startingValue;
+ const returns=months===null?null:growth-totalContributions;
+ return {remaining,months,completionDate,progress,startingValue,projectedValue,totalContributions,growth,returns,assetValue};
 }
 function reviewStatus(item,today=new Date()){
  const interval=Math.floor(bounded(item.reviewIntervalMonths,12,1,60));

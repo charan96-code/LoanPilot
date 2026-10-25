@@ -67,7 +67,10 @@ function project(profile,loans,prepayments,loanCalc,otherLiabilities=[],goals=[]
   }
  });
  let savingsBalance=0;
- const goalRemaining=(goals||[]).map(goal=>Math.max(0,amount(goal.targetAmount)-amount(goal.currentAmount)));
+ const goalRemaining=(goals||[]).map(goal=>{
+  const linkedValue=(goal.assetPlans||[]).reduce((sum,plan)=>sum+amount(model.assets.find(asset=>asset.id===plan.assetId)?.value),0);
+  return Math.max(0,amount(goal.targetAmount)-amount(goal.currentAmount)-linkedValue);
+ });
  const timeline=[];
  for(let year=0;year<=model.assumptions.projectionYears;year++){
   const assetValues=model.assets.map(a=>({name:a.name,value:loanCalc.round(amount(a.value)*Math.pow(1+amount(a.annualGrowth)/100,year))}));
@@ -75,7 +78,9 @@ function project(profile,loans,prepayments,loanCalc,otherLiabilities=[],goals=[]
   if(year>0){
    const priorIncome=model.incomes.reduce((sum,i)=>sum+amount(i.monthlyAmount)*12*Math.pow(1+amount(i.annualGrowth)/100,year-1),0);
    const goalContribution=(goals||[]).reduce((sum,goal,index)=>{
-    const contribution=amount(goal.monthlyContribution)*12*Math.pow(1+model.assumptions.contributionGrowth/100,year-1),allocated=Math.min(goalRemaining[index],contribution);
+     if(goalRemaining[index]<=0)return sum;
+     const monthlyContribution=amount(goal.monthlyContribution)+(goal.assetPlans||[]).reduce((sum,plan)=>sum+amount(plan.monthlyContribution),0);
+    const contribution=monthlyContribution*12*Math.pow(1+model.assumptions.contributionGrowth/100,year-1),allocated=Math.min(goalRemaining[index],contribution);
     goalRemaining[index]-=allocated;
     return sum+allocated;
    },0);
