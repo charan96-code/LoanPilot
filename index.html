@@ -7,37 +7,14 @@
 <body>
 <div class="app-shell">
 <aside class="sidebar">
-  <div class="brand"><div class="brand-mark">₹</div><div class="brand-copy"><strong>Wealth Manager</strong><small>PERSONAL FINANCE</small></div><button class="menu-toggle" id="menuToggle" type="button" aria-label="Collapse navigation" aria-expanded="true">☰</button></div>
-  <div class="workspace-label">WORKSPACE</div>
+  <div class="brand"><div class="brand-mark" aria-hidden="true"><svg viewBox="0 0 40 40" role="presentation"><path d="M8 27.5h24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" opacity=".5"/><path d="M10 24V19m7 5V13m7 11V17m7 7V9" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round"/><path d="m9 15 7-5 7 3 9-7" fill="none" stroke="#a7f3d0" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div><div class="brand-copy"><strong>Wealth Manager</strong><small>PERSONAL FINANCE</small></div><button class="menu-toggle" id="menuToggle" type="button" aria-label="Collapse navigation" aria-expanded="true">☰</button></div>
   <nav id="nav">
-    <div class="nav-group"><div class="nav-group-label">OVERVIEW</div>
-      <button class="nav-item active" data-page="dashboard"><span>◫</span> Financial overview</button>
-      <button class="nav-item" data-page="loanDashboard"><span>▥</span> Loan dashboard</button>
-      <button class="nav-item" data-page="family"><span>⌂</span> Family dashboard</button>
-    </div>
-    <div class="nav-group"><div class="nav-group-label">PLAN & BUILD</div>
-      <button class="nav-item" data-page="cashflow"><span>↔</span> Cash flow</button>
-      <button class="nav-item" data-page="goals"><span>◎</span> Financial goals</button>
-      <button class="nav-item" data-page="emergencyFund"><span>♡</span> Emergency fund</button>
-      <button class="nav-item" data-page="calendar"><span>▦</span> Cash-flow calendar</button>
-      <button class="nav-item" data-page="networth"><span>◉</span> Net worth</button>
-      <button class="nav-item" data-page="whatif"><span>⇄</span> What-if planner</button>
-    </div>
-    <div class="nav-group"><div class="nav-group-label">BORROWING</div>
-      <button class="nav-item" data-page="loans"><span>▤</span> My loans</button>
-      <button class="nav-item" data-page="prepayments"><span>↗</span> Prepayments</button>
-      <button class="nav-item" data-page="bonus"><span>✦</span> Bonus planner</button>
-      <button class="nav-item" data-page="advisor"><span>◎</span> Prepayment advisor</button>
-      <button class="nav-item" data-page="scenarios"><span>⇄</span> Scenarios</button>
-      <button class="nav-item" data-page="schedule"><span>▦</span> Repayment schedules</button>
-    </div>
-    <div class="nav-group"><div class="nav-group-label">REVIEW & REPORT</div>
-      <button class="nav-item" data-page="reports"><span>▥</span> Reports</button>
-      <button class="nav-item" data-page="reviews"><span>◷</span> Account reviews</button>
-    </div>
-    <div class="nav-group"><div class="nav-group-label">PORTFOLIO</div>
-      <button class="nav-item" data-page="data"><span>⇧</span> Import & export</button>
-      <button class="nav-item" data-page="settings"><span>⚙</span> Settings</button>
+    <div class="nav-group"><div class="nav-group-label">YOUR MONEY</div>
+      <button class="nav-item active" data-page="dashboard"><span>◫</span> Overview</button>
+      <button class="nav-item" data-page="planning"><span>◎</span> Plan & build</button>
+      <button class="nav-item" data-page="borrowing"><span>↗</span> Loans</button>
+      <button class="nav-item" data-page="family"><span>⌂</span> Family</button>
+      <button class="nav-item" data-page="workspace"><span>⚙</span> Data & settings</button>
     </div>
   </nav>
   <div class="sidebar-bottom"><div class="privacy-dot"></div><div><strong>Private by design</strong><small>Calculations run in your browser</small></div></div>
@@ -68,5 +45,5 @@
 <label class="wide">Notes<textarea name="notes" rows="2" placeholder="Optional lender-specific conditions"></textarea></label>
 </div><div class="modal-actions"><button type="button" class="btn btn-quiet" id="cancelLoan">Cancel</button><button type="submit" class="btn btn-primary">Save loan</button></div></form></section></div>
 <input type="file" id="fileInput" accept=".csv,.json" hidden>
-<script src="calculations.js"></script><script src="prepayment-advisor.js"></script><script src="networth.js"></script><script src="financial-planning.js"></script><script src="portfolio-family.js"></script><script src="csv-utils.js"></script><script src="reports.js"></script><script src="app.js"></script>
+<script src="calculations.js"></script><script src="prepayment-advisor.js"></script><script src="networth.js"></script><script src="financial-planning.js"></script><script src="portfolio-family.js"></script><script src="csv-utils.js"></script><script src="reports.js"></script><script src="controls.js"></script><script src="app.js"></script>
 </body></html>

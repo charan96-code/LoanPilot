@@ -14,7 +14,7 @@ Open `index.html` in a modern browser. The core calculations and CSV/JSON handli
 - Annual bonus planner with reserve and allocation assumptions.
 - Advisor comparison for highest rate, effective-cost proxy, smallest balance and largest balance, showing selected-loan impact first and portfolio totals as context.
 - Baseline vs. strategy scenario comparison, monthly/quarterly/yearly report views.
-- A cross-feature financial overview plus a dedicated loan dashboard; navigation is grouped by planning workflow.
+- A cross-feature financial overview and dedicated loan dashboard, with a simplified five-section navigation and contextual links that keep planning, loan, family, and data tools together.
 - Multiple isolated portfolios with a persistent header switcher, portfolio creation/rename/archive, and a default portfolio.
 - A simple local family dashboard where each member is one separate portfolio, plus optional shared household assets and liabilities.
 - Net-worth calculator with editable asset balances and growth assumptions (including EPF, NPS, mutual funds and PPF), multiple monthly income sources, an adjustable savings rate, and a year-by-year future projection. Active loan repayment schedules are included as liabilities.
@@ -31,6 +31,7 @@ Open `index.html` in a modern browser. The core calculations and CSV/JSON handli
 - CSV exports for loans, prepayments, bonus plans, transactions, net-worth assets, income sources and net-worth assumptions; workspace JSON backups preserve member portfolios and household shared records.
 - Guided CSV/JSON selection, destination and replace/merge confirmation, schema validation, duplicate summaries, mapped multi-portfolio loan imports, family CSV imports, downloadable templates, a bounded local import history, and downloadable CSV validation reports.
 - Light/dark theme.
+- App-styled dropdown menus and date pickers that replace browser-native popups, with keyboard and touch interaction.
 
 The local-storage key remains compatible with existing LoanPilot and FinPath installations. Existing single-portfolio data is migrated in place to the multi-portfolio workspace without changing financial record IDs. Older separate family-member profiles are folded into matching portfolios where possible; unmatched profiles become empty member portfolios without copying or changing financial records. A first run starts with an empty portfolio; demo data is available only through the explicit reset-to-sample action.
 
