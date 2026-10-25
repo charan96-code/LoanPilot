@@ -575,7 +575,15 @@ body.dark select:not([multiple]){
 }
 .app-date-popup.is-open{display:block}
 .app-calendar-header{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:14px}
-.app-calendar-header strong{font:700 13px Manrope,sans-serif;letter-spacing:-.2px}
+.app-calendar-date-selectors{display:flex;align-items:center;gap:5px}
+.app-calendar-selector{flex:0 0 auto}
+.app-calendar-selector .app-select-trigger{
+ min-height:32px;
+ padding:5px 7px;
+ font-size:11px;
+}
+.app-calendar-month{width:122px}
+.app-calendar-year{width:78px}
 .app-calendar-month-controls{display:flex;gap:5px}
 .app-calendar-nav{
  display:grid;place-items:center;

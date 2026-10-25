@@ -1,6 +1,6 @@
 (function(){
 const DATE_FORMAT=new Intl.DateTimeFormat('en-IN',{day:'numeric',month:'short',year:'numeric'});
-const MONTH_FORMAT=new Intl.DateTimeFormat('en-IN',{month:'long',year:'numeric'});
+const MONTH_FORMAT=new Intl.DateTimeFormat('en-IN',{month:'long'});
 const WEEKDAYS=['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
 let openPopup=null;
 
@@ -219,8 +219,68 @@ function enhanceDate(input){
   popup.replaceChildren();
   const header=document.createElement('div');
   header.className='app-calendar-header';
-  const heading=document.createElement('strong');
-  heading.textContent=MONTH_FORMAT.format(visibleMonth);
+  const heading=document.createElement('div');
+  heading.className='app-calendar-date-selectors';
+  const makeSelector=(label,options,selected,onSelect,className)=>{
+   const wrapper=document.createElement('div');
+   wrapper.className=`app-select app-calendar-selector ${className}`;
+   const trigger=document.createElement('button');
+   trigger.type='button';
+   trigger.className='app-select-trigger';
+   trigger.setAttribute('aria-haspopup','listbox');
+   trigger.setAttribute('aria-expanded','false');
+   trigger.setAttribute('aria-label',label);
+   const text=document.createElement('span');
+   text.className='app-select-value';
+   const arrow=document.createElement('span');
+   arrow.className='app-select-arrow';
+   arrow.setAttribute('aria-hidden','true');
+   trigger.append(text,arrow);
+   const menu=document.createElement('div');
+   menu.className='app-select-menu';
+   menu.setAttribute('role','listbox');
+   options.forEach(option=>{
+    const item=document.createElement('button');
+    item.type='button';
+    item.className='app-select-option';
+    item.setAttribute('role','option');
+    item.setAttribute('aria-selected',String(option.value===selected));
+    item.classList.toggle('is-selected',option.value===selected);
+    item.textContent=option.label;
+    item.addEventListener('click',event=>{
+     event.stopPropagation();
+     onSelect(option.value);
+    });
+    menu.append(item);
+   });
+   trigger.addEventListener('click',event=>{
+    event.stopPropagation();
+    const opening=!menu.classList.contains('is-open');
+    heading.querySelectorAll('.app-select-menu.is-open').forEach(openMenu=>openMenu.classList.remove('is-open'));
+    heading.querySelectorAll('.app-select-trigger[aria-expanded="true"]').forEach(openTrigger=>openTrigger.setAttribute('aria-expanded','false'));
+    menu.classList.toggle('is-open',opening);
+    trigger.setAttribute('aria-expanded',String(opening));
+   });
+   wrapper.append(trigger,menu);
+   text.textContent=options.find(option=>option.value===selected)?.label||'';
+   return wrapper;
+  };
+  const currentYear=new Date().getFullYear();
+  const minYear=Math.min(parseDate(input.min)?.getFullYear()??currentYear-100,year);
+  const maxYear=Math.max(parseDate(input.max)?.getFullYear()??currentYear+100,year);
+  const months=Array.from({length:12},(_,index)=>({value:index,label:MONTH_FORMAT.format(new Date(2020,index,1))}));
+  const years=Array.from({length:maxYear-minYear+1},(_,index)=>{const value=minYear+index;return {value,label:String(value)}});
+  let selectedMonth=month,selectedYear=year;
+  const changeMonth=(nextMonth,nextYear)=>{
+   selectedMonth=nextMonth;
+   selectedYear=nextYear;
+   visibleMonth=new Date(selectedYear,selectedMonth,1);
+   draw();
+  };
+  heading.append(
+   makeSelector('Calendar month',months,month,value=>changeMonth(value,selectedYear),'app-calendar-month'),
+   makeSelector('Calendar year',years,year,value=>changeMonth(selectedMonth,value),'app-calendar-year')
+  );
   const controls=document.createElement('div');
   controls.className='app-calendar-month-controls';
   const prev=document.createElement('button'),next=document.createElement('button');
@@ -229,8 +289,8 @@ function enhanceDate(input){
   prev.setAttribute('aria-label','Previous month');
   next.setAttribute('aria-label','Next month');
   prev.textContent='‹';next.textContent='›';
-  prev.addEventListener('click',()=>{visibleMonth=new Date(year,month-1,1);draw()});
-  next.addEventListener('click',()=>{visibleMonth=new Date(year,month+1,1);draw()});
+  prev.addEventListener('click',event=>{event.stopPropagation();visibleMonth=new Date(year,month-1,1);draw()});
+  next.addEventListener('click',event=>{event.stopPropagation();visibleMonth=new Date(year,month+1,1);draw()});
   controls.append(prev,next);header.append(heading,controls);
   const weekdays=document.createElement('div');
   weekdays.className='app-calendar-weekdays';
@@ -289,7 +349,7 @@ function enhance(root=document){
 
 window.refreshAppControls=()=>enhance();
 document.addEventListener('click',event=>{
- if(openPopup&&!openPopup.contains(event.target))closePopup();
+ if(openPopup&&!event.composedPath().includes(openPopup))closePopup();
 });
 document.addEventListener('keydown',event=>{
  if(event.key==='Escape')closePopup();
