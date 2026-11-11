@@ -448,6 +448,12 @@ body.dark{color-scheme:dark}
 .overview-hero{min-height:148px}
 .overview-stats .stat-value{font-size:clamp(18px,1.8vw,24px)}
 .overview-stats .stat-foot{max-width:270px}
+.deposit-card{border-color:color-mix(in srgb,var(--green) 18%,var(--line))}
+.deposit-card .form-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
+.deposit-estimate{display:grid;gap:4px;margin-top:14px;padding:12px 14px;border:1px solid var(--line);border-radius:10px;background:var(--surface2);color:var(--muted);font-size:11px}
+.deposit-estimate strong{color:var(--text);font-size:14px}
+.deposit-estimate small{font-size:10px}
+@media(max-width:720px){.deposit-card .form-grid{grid-template-columns:1fr}}
 .upcoming-events{display:grid}
 .upcoming-event{display:grid;grid-template-columns:30px minmax(0,1fr) auto;align-items:center;gap:10px;padding:12px 0;border-bottom:1px solid var(--line)}
 .upcoming-event:last-child{border-bottom:0}

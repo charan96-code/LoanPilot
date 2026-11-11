@@ -22,6 +22,12 @@ function bounded(value,fallback,min,max){
  const number=Number(value);
  return Number.isFinite(number)?Math.max(min,Math.min(max,number)):fallback;
 }
+function addMonths(date,months){
+ const result=new Date(date.getFullYear(),date.getMonth()+months,1,12);
+ result.setDate(Math.min(date.getDate(),new Date(result.getFullYear(),result.getMonth()+1,0).getDate()));
+ return result;
+}
+function dateText(date){return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`}
 function isEmergencyEligible(asset){
  if(asset.emergencyEligible!==undefined)return asset.emergencyEligible===true||asset.emergencyEligible==='true'||asset.emergencyEligible===1;
  return /cash|saving|bank|fixed deposit|liquid fund/i.test(String(asset.name||''));
@@ -29,13 +35,43 @@ function isEmergencyEligible(asset){
 function normalize(data){
  const defaults=createDefaults();
  if(!data||typeof data!=='object')return defaults;
- const entries=(items,fallback,amountKey)=>Array.isArray(items)?items.filter(x=>x&&typeof x==='object').map((x,i)=>({
-  id:String(x.id||`NW-${amountKey}-${i+1}`),
-  name:String(x.name||'Untitled'),
-  [amountKey]:bounded(x[amountKey],0,0,Number.MAX_VALUE),
-  annualGrowth:bounded(x.annualGrowth,0,-100,100),
-  ...(amountKey==='value'?{reviewedAt:String(x.reviewedAt||''),reviewIntervalMonths:Math.floor(bounded(x.reviewIntervalMonths,12,1,60)),emergencyEligible:isEmergencyEligible(x)}:{})
- })):fallback;
+ const entries=(items,fallback,amountKey)=>Array.isArray(items)?items.filter(x=>x&&typeof x==='object').map((x,i)=>{
+  const isDeposit=x.assetType==='Deposit';
+  return {
+   id:String(x.id||`NW-${amountKey}-${i+1}`),
+   name:String(x.name||'Untitled'),
+   [amountKey]:bounded(x[amountKey],0,0,Number.MAX_VALUE),
+   annualGrowth:bounded(x.annualGrowth,isDeposit?bounded(x.annualRate,0,0,100):0,-100,100),
+   ...(amountKey==='value'?{
+    reviewedAt:String(x.reviewedAt||''),
+    reviewIntervalMonths:Math.floor(bounded(x.reviewIntervalMonths,12,1,60)),
+    emergencyEligible:isEmergencyEligible(x),
+    assetType:isDeposit?'Deposit':'Other',
+    ...(isDeposit?{
+     depositType:['FD','RD','Bond'].includes(x.depositType)?x.depositType:'FD',
+     investedAmount:bounded(x.investedAmount,0,0,Number.MAX_VALUE),
+     monthlyContribution:bounded(x.monthlyContribution,0,0,Number.MAX_VALUE),
+     annualRate:bounded(x.annualRate,0,0,100),
+     investedDate:String(x.investedDate||''),
+     maturityDate:String(x.maturityDate||''),
+     maturityMonths:Math.floor(bounded(x.maturityMonths,0,0,600)),
+     interestPayoutFrequency:['Monthly','Quarterly','Half-yearly','Yearly','Maturity'].includes(x.interestPayoutFrequency)?x.interestPayoutFrequency:'Maturity',
+     principalPayoutFrequency:['Monthly','Quarterly','Half-yearly','Yearly','Maturity'].includes(x.principalPayoutFrequency)?x.principalPayoutFrequency:'Maturity',
+     maturityReminderMonths:Math.floor(bounded(x.maturityReminderMonths,1,0,24)),
+     renewalAction:['Undecided','Renew principal','Renew principal + interest','Redeem'].includes(x.renewalAction)?x.renewalAction:'Undecided',
+     renewalStatus:['Pending','Renewed','Redeemed'].includes(x.renewalStatus)?x.renewalStatus:'Pending',
+     renewalTermMonths:Math.floor(bounded(x.renewalTermMonths,12,1,600)),
+     renewalRate:bounded(x.renewalRate,bounded(x.annualRate,0,0,100),0,100),
+     renewalCount:Math.floor(bounded(x.renewalCount,0,0,1000)),
+     lastRenewedAt:String(x.lastRenewedAt||''),
+     lastRenewalAction:['Renew principal','Renew principal + interest'].includes(x.lastRenewalAction)?x.lastRenewalAction:'',
+     redeemedValue:bounded(x.redeemedValue,0,0,Number.MAX_VALUE),
+     estimatedTaxRate:bounded(x.estimatedTaxRate,0,0,100),
+     estimatedTdsRate:bounded(x.estimatedTdsRate,0,0,100)
+    }:{})
+   }:{})
+  };
+ }):fallback;
  const a=data.assumptions||{};
  return {
   assets:entries(data.assets,defaults.assets,'value'),
@@ -49,6 +85,61 @@ function normalize(data){
  };
 }
 const amount=n=>Math.max(0,Number(n)||0);
+function monthsToMaturity(asset,asOf=new Date()){
+ if(asset?.assetType!=='Deposit')return 0;
+ if(asset.maturityDate&&/^\d{4}-\d{2}-\d{2}$/.test(asset.maturityDate)){
+  const maturity=new Date(`${asset.maturityDate}T12:00:00`),start=new Date(asOf.getFullYear(),asOf.getMonth(),asOf.getDate());
+  if(!Number.isNaN(maturity.getTime())){
+   if(maturity<=start)return 0;
+   return Math.max(1,(maturity.getFullYear()-start.getFullYear())*12+maturity.getMonth()-start.getMonth()-(maturity.getDate()<start.getDate()?1:0));
+  }
+ }
+ return Math.max(0,Math.floor(Number(asset.maturityMonths)||0));
+}
+function maturityDate(asset,asOf=new Date()){
+ if(asset?.assetType!=='Deposit')return null;
+ if(asset.maturityDate&&/^\d{4}-\d{2}-\d{2}$/.test(asset.maturityDate)){
+  const date=new Date(`${asset.maturityDate}T12:00:00`);
+  if(!Number.isNaN(date.getTime())&&date.toISOString().slice(0,10)===asset.maturityDate)return date;
+ }
+ const months=Math.floor(Number(asset.maturityMonths)||0);
+ if(!months)return null;
+ return addMonths(asOf,months);
+}
+function maturityReminder(asset,asOf=new Date()){
+ const date=maturityDate(asset,asOf);
+ if(!date||asset.renewalStatus!=='Pending')return {date,daysRemaining:null,due:false};
+ const today=new Date(asOf.getFullYear(),asOf.getMonth(),asOf.getDate(),12),daysRemaining=Math.ceil((date-today)/86400000);
+ const configuredMonths=asset.maturityReminderMonths===undefined?1:Number(asset.maturityReminderMonths),reminderMonths=Math.max(0,Math.floor(Number.isFinite(configuredMonths)?configuredMonths:1)),reminderDate=new Date(today.getFullYear(),today.getMonth()+reminderMonths,1,12);
+ reminderDate.setDate(Math.min(today.getDate(),new Date(reminderDate.getFullYear(),reminderDate.getMonth()+1,0).getDate()));
+ return {date,daysRemaining,due:date<=reminderDate};
+}
+function depositTermMonths(asset,asOf=new Date()){
+ const remaining=monthsToMaturity(asset,asOf);
+ if(remaining)return remaining;
+ if(asset?.maturityDate&&asset.investedDate&&/^\d{4}-\d{2}-\d{2}$/.test(asset.maturityDate)&&/^\d{4}-\d{2}-\d{2}$/.test(asset.investedDate)){
+  const start=new Date(`${asset.investedDate}T12:00:00`),end=new Date(`${asset.maturityDate}T12:00:00`);
+  if(!Number.isNaN(start.getTime())&&!Number.isNaN(end.getTime()))return Math.max(0,(end.getFullYear()-start.getFullYear())*12+end.getMonth()-start.getMonth()-(end.getDate()<start.getDate()?1:0));
+ }
+ return Math.max(0,Math.floor(Number(asset?.maturityMonths)||0));
+}
+function depositMaturityEstimate(asset,asOf=new Date()){
+ const months=depositTermMonths(asset,asOf);
+ if(!months)return null;
+ const principal=amount(asset.value),rate=amount(asset.annualRate)/1200,contribution=amount(asset.monthlyContribution);
+ const value=asset.interestPayoutFrequency==='Maturity'
+  ?principal*Math.pow(1+rate,months)+contribution*(rate?((Math.pow(1+rate,months)-1)/rate):months)
+  :principal*(1+amount(asset.annualRate)*months/120000)+contribution*months;
+ return {months,value:Math.round(value*100)/100};
+}
+function depositTaxEstimate(asset,asOf=new Date()){
+ const months=depositTermMonths(asset,asOf);
+ const principal=amount(asset.investedAmount)||amount(asset.value),installment=asset.depositType==='RD'?amount(asset.monthlyContribution):0;
+ const grossInterest=Math.max(0,(principal+installment*months/2)*amount(asset.annualRate)/100*months/12);
+ const estimatedTax=grossInterest*amount(asset.estimatedTaxRate)/100;
+ const estimatedTds=Math.min(estimatedTax,grossInterest*amount(asset.estimatedTdsRate)/100);
+ return {months,grossInterest:Math.round(grossInterest*100)/100,estimatedTax:Math.round(estimatedTax*100)/100,estimatedTds:Math.round(estimatedTds*100)/100,estimatedTaxAfterTds:Math.round(Math.max(0,estimatedTax-estimatedTds)*100)/100,netInterest:Math.round(Math.max(0,grossInterest-estimatedTax)*100)/100};
+}
 function project(profile,loans,prepayments,loanCalc,otherLiabilities=[],goals=[],bonuses=[]){
  const model=normalize(profile),activeLoans=(loans||[]).filter(l=>l.status==='Active');
  const schedules=loanCalc.portfolioSimulation(activeLoans,prepayments||[]).schedules;
@@ -73,7 +164,11 @@ function project(profile,loans,prepayments,loanCalc,otherLiabilities=[],goals=[]
  });
  const timeline=[];
  for(let year=0;year<=model.assumptions.projectionYears;year++){
-  const assetValues=model.assets.map(a=>({name:a.name,value:loanCalc.round(amount(a.value)*Math.pow(1+amount(a.annualGrowth)/100,year))}));
+  const assetValues=model.assets.map(a=>{
+   const months=monthsToMaturity(a),yearsToMaturity=months/12;
+   const growthYears=a.assetType==='Deposit'&&months?Math.min(year,yearsToMaturity):year;
+   return {name:a.name,value:loanCalc.round(amount(a.value)*Math.pow(1+amount(a.annualGrowth)/100,growthYears))};
+  });
   const annualIncome=loanCalc.round(model.incomes.reduce((sum,i)=>sum+amount(i.monthlyAmount)*12*Math.pow(1+amount(i.annualGrowth)/100,year),0));
   if(year>0){
    const priorIncome=model.incomes.reduce((sum,i)=>sum+amount(i.monthlyAmount)*12*Math.pow(1+amount(i.annualGrowth)/100,year-1),0);
@@ -108,5 +203,5 @@ function project(profile,loans,prepayments,loanCalc,otherLiabilities=[],goals=[]
  }
  return {timeline,assumptions:model.assumptions};
 }
-g.NetWorthCalc={createDefaults,normalize,project};
+g.NetWorthCalc={createDefaults,normalize,project,monthsToMaturity,maturityDate,maturityReminder,depositMaturityEstimate,depositTaxEstimate};
 })(window);

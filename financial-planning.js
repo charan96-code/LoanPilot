@@ -108,6 +108,48 @@ function cashflowCalendar({loans=[],prepayments=[],expenses=[],liabilities=[],go
    push(date,bonus.name||'Expected bonus','Bonus',amount,'in','Estimated after reserves');
   }
  });
+ const payoutSteps={Monthly:1,Quarterly:3,'Half-yearly':6,Yearly:12,Annual:12};
+ (assets||[]).filter(asset=>asset.assetType==='Deposit'&&Number(asset.value)>0).forEach(asset=>{
+  const principal=Math.max(0,Number(asset.investedAmount)||Number(asset.value)||0),rate=Math.max(0,Number(asset.annualRate)||0);
+  const begin=validDate(asset.investedDate)?new Date(`${asset.investedDate}T12:00:00`):start;
+  const maturity=validDate(asset.maturityDate)?new Date(`${asset.maturityDate}T12:00:00`):asset.maturityMonths>0?atMonth(start,Math.floor(Number(asset.maturityMonths))):null;
+  const totalMonths=maturity?Math.max(1,(maturity.getFullYear()-begin.getFullYear())*12+maturity.getMonth()-begin.getMonth()):0;
+  const contributionStart=begin>start?begin:start;
+  const futureContributionMonths=maturity?Math.max(0,Math.min(600,(maturity.getFullYear()-contributionStart.getFullYear())*12+maturity.getMonth()-contributionStart.getMonth()+(maturity.getDate()>contributionStart.getDate()?1:0))):0;
+  const installment=asset.depositType==='RD'?Math.max(0,Number(asset.monthlyContribution)||0):0,payoutPrincipal=principal+installment*Math.max(0,futureContributionMonths);
+  for(let index=0;installment>0&&index<futureContributionMonths;index++)push(contributionStart>start?atMonth(contributionStart,index):estimateDate(index),`${asset.name||'Recurring deposit'} installment`,'RD installment',installment,'out','Estimated monthly RD contribution');
+  const interestStep=payoutSteps[asset.interestPayoutFrequency]||0;
+  const pushInterest=(date,gross,detail)=>{
+   if(gross<=0)return;
+   const tax=Math.max(0,gross*Math.max(0,Number(asset.estimatedTaxRate)||0)/100),tds=Math.min(tax,gross*Math.max(0,Number(asset.estimatedTdsRate)||0)/100);
+   push(date,`${asset.name||asset.depositType||'Deposit'} interest`,'Deposit interest',gross,'in',detail);
+   if(tax>0)push(date,`${asset.name||asset.depositType||'Deposit'} estimated tax`,'Deposit tax',tax,'out',`Estimated tax ${tax.toFixed(2)}; estimated TDS credit ${tds.toFixed(2)}; not a tax calculation or statutory TDS determination`);
+  };
+  if(maturity&&asset.interestPayoutFrequency==='Maturity'){
+   const months=Math.max(0,(maturity.getFullYear()-begin.getFullYear())*12+maturity.getMonth()-begin.getMonth());
+   pushInterest(maturity,principal*rate*months/1200,'Estimated interest paid at maturity');
+  }else if(interestStep){
+   const delta=(start.getFullYear()-begin.getFullYear())*12+start.getMonth()-begin.getMonth();
+   let index=Math.max(1,Math.ceil(delta/interestStep)),date=atMonth(begin,index*interestStep);
+   while(date<start){index++;date=atMonth(begin,index*interestStep)}
+   for(;date<endMonth&&(!maturity||date<=maturity);index++,date=atMonth(begin,index*interestStep)){
+    pushInterest(date,principal*rate*interestStep/1200,`Estimated ${asset.interestPayoutFrequency.toLowerCase()} interest payout`);
+   }
+  }
+  const principalStep=payoutSteps[asset.principalPayoutFrequency]||0;
+  if(maturity&&asset.principalPayoutFrequency==='Maturity'){
+   push(maturity,`${asset.name||asset.depositType||'Deposit'} principal`,'Deposit principal',payoutPrincipal,'in','Principal returned at maturity');
+  }else if(maturity&&principalStep&&totalMonths>0){
+   const delta=(start.getFullYear()-begin.getFullYear())*12+start.getMonth()-begin.getMonth();
+   let index=Math.max(1,Math.ceil(delta/principalStep)),date=atMonth(begin,index*principalStep);
+   while(date<start){index++;date=atMonth(begin,index*principalStep)}
+   const dates=[];
+   for(;date<=maturity&&dates.length<600;index++,date=atMonth(begin,index*principalStep))dates.push(date);
+   if(!dates.length)dates.push(maturity);
+   const amount=payoutPrincipal/dates.length;
+   dates.forEach((payoutDate,payoutIndex)=>push(payoutDate,`${asset.name||asset.depositType||'Deposit'} principal`,'Deposit principal',payoutIndex===dates.length-1?payoutPrincipal-amount*(dates.length-1):amount,'in',`Estimated ${asset.principalPayoutFrequency.toLowerCase()} principal payout`));
+  }
+ });
  return events.sort((a,b)=>a.date.localeCompare(b.date)||a.direction.localeCompare(b.direction)||a.label.localeCompare(b.label));
 }
 function cashflow(incomes,expenses,loans,liabilities,goals=[],prepayments=[],savingsRate=0,asOf=new Date(),assets=[]){
